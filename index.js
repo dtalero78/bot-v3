@@ -80,7 +80,35 @@ async function getConversationFromDB(userId) {
   }
 }
 
-// Función para guardar conversación en WHP
+// Función para actualizar solo el campo stopBot en WHP
+async function updateStopBotOnly(userId, stopBot) {
+  try {
+    // Primero obtenemos la conversación actual para no perder los mensajes
+    const current = await getConversationFromDB(userId);
+
+    // Convertir mensajes existentes de vuelta a formato WHP
+    const mensajesWHP = current.mensajes.map(msg => ({
+      from: msg.from,
+      mensaje: msg.mensaje,
+      timestamp: msg.timestamp || new Date().toISOString()
+    }));
+
+    const response = await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
+      userId: userId,
+      nombre: '',
+      mensajes: mensajesWHP,
+      stopBot: stopBot
+    });
+
+    console.log(`✅ stopBot actualizado a ${stopBot} para ${userId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error actualizando stopBot:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
+// Función para guardar conversación completa en WHP
 async function saveConversationToDB(userId, mensajes, stopBot = false, nombre = '') {
   try {
     // Convertir el formato OpenAI a formato WHP
@@ -170,11 +198,11 @@ app.post('/webhook', async (req, res) => {
       // Verificar si el admin quiere detener o reactivar el bot
       if (messageText === '...transfiriendo con asesor') {
         console.log(`🎯 Comando detectado: detener bot para ${userId}`);
-        await saveConversationToDB(userId, [], true);
+        await updateStopBotOnly(userId, true);
         console.log(`🛑 Bot detenido para ${userId} por el administrador`);
       } else if (messageText === '...te dejo con el bot 🤖') {
         console.log(`🎯 Comando detectado: reactivar bot para ${userId}`);
-        await saveConversationToDB(userId, [], false);
+        await updateStopBotOnly(userId, false);
         console.log(`✅ Bot reactivado para ${userId} por el administrador`);
       } else {
         console.log(`⚠️ Mensaje del admin no coincide con comandos conocidos`);
@@ -223,9 +251,6 @@ app.post('/webhook', async (req, res) => {
       { role: 'assistant', content: aiResponse }
     );
 
-    // Guardar en la base de datos
-    await saveConversationToDB(from, conversationHistory);
-
     // Verificar comandos especiales
     if (aiResponse === 'VOLVER_AL_MENU') {
       // Limpiar historial y enviar menú
@@ -237,7 +262,7 @@ app.post('/webhook', async (req, res) => {
     } else if (aiResponse.includes('...transfiriendo con asesor')) {
       // Enviar mensaje, marcar stopBot y detener el bot para este usuario
       await sendWhatsAppMessage(from, aiResponse);
-      await saveConversationToDB(from, [], true);
+      await updateStopBotOnly(from, true);
       console.log(`🤖 Bot auto-detenido para ${from} (transferencia a asesor)`);
     } else {
       // Enviar respuesta normal
