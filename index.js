@@ -138,8 +138,6 @@ app.post('/webhook', async (req, res) => {
     }
 
     console.log(`Mensaje de ${from}: ${messageText}`);
-    console.log(`Debug: from="${from}", ADMIN_NUMBER="${ADMIN_NUMBER}", from_me=${message.from_me}`);
-    console.log(`Debug: from === ADMIN_NUMBER = ${from === ADMIN_NUMBER}`);
 
     // 👨‍💼 VERIFICAR SI EL MENSAJE ES DEL ADMIN (incluso si from_me es true)
     if (from === ADMIN_NUMBER && message.from_me) {
