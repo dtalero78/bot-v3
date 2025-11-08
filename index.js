@@ -139,19 +139,24 @@ app.post('/webhook', async (req, res) => {
 
     console.log(`Mensaje de ${from}: ${messageText}`);
 
-    // 👨‍💼 VERIFICAR SI EL MENSAJE ES DEL ADMIN (incluso si from_me es true)
+    // 👨‍💼 VERIFICAR SI EL MENSAJE ES DEL ADMIN (exactamente como el ejemplo)
     if (from === ADMIN_NUMBER && message.from_me) {
       console.log('📨 Mensaje del administrador detectado');
 
-      // Verificar si el admin quiere detener el bot
-      if (messageText.includes('...transfiriendo con asesor')) {
-        // Extraer el número del usuario del chat_id (remover @s.whatsapp.net)
-        const userId = chatId.replace('@s.whatsapp.net', '');
+      // Extraer el userId del chat_id (remover @s.whatsapp.net)
+      const userId = chatId ? chatId.split('@')[0].trim() : null;
 
-        if (userId && userId !== ADMIN_NUMBER) {
-          await updateStopBot(userId, true);
-          console.log(`🛑 Bot detenido para ${userId} por el administrador`);
-        }
+      if (!userId) {
+        return res.status(200).json({ status: 'ok', message: 'No chatId found' });
+      }
+
+      // Verificar si el admin quiere detener o reactivar el bot
+      if (messageText === '...transfiriendo con asesor') {
+        await updateStopBot(userId, true);
+        console.log(`🛑 Bot detenido para ${userId} por el administrador`);
+      } else if (messageText === '...te dejo con el bot 🤖') {
+        await updateStopBot(userId, false);
+        console.log(`✅ Bot reactivado para ${userId} por el administrador`);
       }
 
       // Los mensajes del admin no se procesan con el bot
