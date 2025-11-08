@@ -83,26 +83,36 @@ async function getConversationFromDB(userId) {
 // Función para actualizar solo el campo stopBot en WHP
 async function updateStopBotOnly(userId, stopBot) {
   try {
-    // Primero obtenemos la conversación actual para no perder los mensajes
-    const current = await getConversationFromDB(userId);
+    // Obtener conversación actual
+    const response = await axios.get(`${WIX_BACKEND_URL}/_functions/obtenerConversacion`, {
+      params: { userId }
+    });
 
-    // Convertir mensajes existentes de vuelta a formato WHP
-    const mensajesWHP = current.mensajes.map(msg => ({
-      from: msg.from,
-      mensaje: msg.mensaje,
-      timestamp: msg.timestamp || new Date().toISOString()
-    }));
+    // Extraer mensajes tal como están en la BD (ya en formato WHP)
+    const mensajesActuales = response.data?.mensajes || [];
 
-    const response = await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
+    // Actualizar con los mensajes existentes + stopBot
+    const updateResponse = await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
       userId: userId,
       nombre: '',
-      mensajes: mensajesWHP,
+      mensajes: mensajesActuales,
       stopBot: stopBot
     });
 
-    console.log(`✅ stopBot actualizado a ${stopBot} para ${userId}`);
-    return response.data;
+    console.log(`✅ stopBot actualizado a ${stopBot} para ${userId} (${mensajesActuales.length} mensajes preservados)`);
+    return updateResponse.data;
   } catch (error) {
+    // Si el usuario no existe, crear registro con stopBot
+    if (error.response?.status === 404 || error.response?.status === 400) {
+      console.log(`ℹ️ Usuario ${userId} no existe. Creando registro con stopBot=${stopBot}`);
+      const createResponse = await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
+        userId: userId,
+        nombre: '',
+        mensajes: [],
+        stopBot: stopBot
+      });
+      return createResponse.data;
+    }
     console.error('Error actualizando stopBot:', error.response?.data || error.message);
     throw error;
   }
