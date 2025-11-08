@@ -18,6 +18,9 @@ const openai = new OpenAI({
 const WHAPI_BASE_URL = 'https://gate.whapi.cloud';
 const WHAPI_TOKEN = process.env.WHAPI_KEY;
 
+// Configuración de Wix Backend
+const WIX_BACKEND_URL = process.env.WIX_BACKEND_URL;
+
 // Almacenar conversaciones en memoria (en producción, usar una base de datos)
 const conversations = new Map();
 
@@ -43,6 +46,30 @@ async function sendWhatsAppMessage(to, message) {
   } catch (error) {
     console.error('Error enviando mensaje:', error.response?.data || error.message);
     throw error;
+  }
+}
+
+// Función para verificar si el usuario tiene stopBot activo en WHP
+async function checkStopBot(userId) {
+  try {
+    const response = await axios.get(`${WIX_BACKEND_URL}/_functions/obtenerConversacion`, {
+      params: { userId }
+    });
+
+    if (response.data && response.data.stopBot === true) {
+      console.log(`🛑 Usuario ${userId} tiene stopBot activo. No se enviará respuesta.`);
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    // Si no existe el usuario en la BD o hay error, permitir que el bot responda
+    if (error.response?.status === 404 || error.response?.status === 400) {
+      console.log(`ℹ️ Usuario ${userId} no encontrado en WHP. Permitiendo interacción.`);
+      return false;
+    }
+    console.error('Error consultando stopBot:', error.message);
+    return false;
   }
 }
 
@@ -94,6 +121,16 @@ app.post('/webhook', async (req, res) => {
     }
 
     console.log(`Mensaje de ${from}: ${messageText}`);
+
+    // 🛑 VERIFICAR SI EL USUARIO TIENE STOPBOT ACTIVO
+    const isStopped = await checkStopBot(from);
+    if (isStopped) {
+      console.log(`⛔ Bot detenido para ${from}. No se procesará el mensaje.`);
+      return res.status(200).json({
+        status: 'ok',
+        message: 'Bot stopped for this user'
+      });
+    }
 
     // Obtener historial de conversación
     let conversationHistory = conversations.get(from) || [];
