@@ -27,6 +27,9 @@ const ADMIN_NUMBER = process.env.ADMIN_NUMBER;
 // NOTA: El historial de conversaciones ahora se guarda en WHP (base de datos Wix)
 // Ya no usamos Map() en memoria para persistir entre reinicios
 
+// Estados para el flujo de pagos
+const ESTADO_ESPERANDO_DOCUMENTO = 'esperando_documento';
+
 // Función para enviar mensajes a través de Whapi
 async function sendWhatsAppMessage(to, message) {
   try {
@@ -142,6 +145,77 @@ async function saveConversationToDB(userId, mensajes, stopBot = false, nombre = 
     throw error;
   }
 }
+
+// ========================================
+// FUNCIONES PARA FLUJO DE PAGOS
+// ========================================
+
+// Validar si es cédula (solo números, 6-10 dígitos)
+function esCedula(texto) {
+  const regex = /^\d{6,10}$/;
+  return regex.test(texto.trim());
+}
+
+// Clasificar imagen con OpenAI Vision
+async function clasificarImagen(base64Image, mimeType) {
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: 'Analiza esta imagen y responde ÚNICAMENTE con "comprobante_pago" si es un comprobante de pago, transferencia bancaria o recibo de pago. Si no lo es, responde "no_es_comprobante".'
+            },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`
+              }
+            }
+          ]
+        }
+      ],
+      max_tokens: 50
+    });
+
+    const resultado = response.choices[0].message.content.trim().toLowerCase();
+    return resultado.includes('comprobante_pago') ? 'comprobante_pago' : 'no_es_comprobante';
+  } catch (error) {
+    console.error('Error clasificando imagen:', error);
+    return 'error';
+  }
+}
+
+// Marcar como pagado en Wix y obtener _id del item
+async function marcarPagado(cedula) {
+  try {
+    const response = await axios.post('https://www.bsl.com.co/_functions/marcarPagado', {
+      userId: cedula,
+      observaciones: 'Pagado'
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log(`💰 Usuario ${cedula} marcado como pagado`);
+    return {
+      success: true,
+      data: response.data,
+      historiaClinicaId: response.data?._id || response.data?.id
+    };
+  } catch (error) {
+    console.error('Error marcando como pagado:', error.response?.data || error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+// ========================================
+// FIN FUNCIONES PARA FLUJO DE PAGOS
+// ========================================
 
 // Función para obtener respuesta de OpenAI
 async function getAIResponse(userMessage, conversationHistory = []) {
@@ -289,6 +363,148 @@ app.post('/webhook', async (req, res) => {
 // Endpoint de verificación
 app.get('/webhook', (req, res) => {
   res.status(200).send('Webhook is active');
+});
+
+// ========================================
+// WEBHOOK PARA VALIDACIÓN DE PAGOS
+// ========================================
+app.post('/webhook-pagos', async (req, res) => {
+  try {
+    console.log('💰 Webhook de pagos recibido:', JSON.stringify(req.body, null, 2));
+
+    const message = req.body.messages?.[0];
+
+    if (!message) {
+      return res.status(200).json({ status: 'ok', message: 'No message found' });
+    }
+
+    const from = message.from;
+    const messageType = message.type;
+    const messageText = message.text?.body || '';
+
+    // Ignorar mensajes del bot
+    if (message.from_me) {
+      return res.status(200).json({ status: 'ok', message: 'Message from bot ignored' });
+    }
+
+    // Obtener conversación desde BD
+    const conversationData = await getConversationFromDB(from);
+    const nivel = conversationData.observaciones; // Usamos observaciones como nivel/estado
+
+    // FLUJO 1: Usuario envía imagen (comprobante de pago)
+    if (messageType === 'image') {
+      console.log(`📸 Imagen recibida de ${from}`);
+
+      try {
+        // 1. Descargar imagen
+        const imageId = message.image?.id;
+        const mimeType = message.image?.mime_type || 'image/jpeg';
+        const urlImg = `https://gate.whapi.cloud/media/${imageId}`;
+
+        const imageResponse = await axios.get(urlImg, {
+          headers: { 'Authorization': `Bearer ${WHAPI_TOKEN}` },
+          responseType: 'arraybuffer'
+        });
+
+        const base64Image = Buffer.from(imageResponse.data).toString('base64');
+
+        // 2. Validar con OpenAI Vision
+        const clasificacion = await clasificarImagen(base64Image, mimeType);
+
+        if (clasificacion !== 'comprobante_pago') {
+          const mensaje = `❌ La imagen no parece ser un comprobante de pago válido.\n\nPor favor envía una imagen clara de tu:\n• Comprobante bancario\n• Transferencia\n• Recibo de pago`;
+          await sendWhatsAppMessage(from, mensaje);
+          return res.status(200).json({ status: 'ok', message: 'Imagen no válida' });
+        }
+
+        // 3. Comprobante válido - pedir documento
+        const mensaje = `✅ *Comprobante de pago recibido*\n\nPara completar el proceso y generar tu certificado, escribe tu *número de documento* (solo números, sin puntos).\n\nEjemplo: 1234567890`;
+        await sendWhatsAppMessage(from, mensaje);
+
+        // 4. Guardar estado
+        await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
+          userId: from,
+          nombre: message.from_name || '',
+          mensajes: conversationData.mensajes,
+          observaciones: ESTADO_ESPERANDO_DOCUMENTO
+        });
+
+        console.log(`💾 Estado: esperando documento de ${from}`);
+        return res.status(200).json({ status: 'ok', message: 'Comprobante validado' });
+
+      } catch (error) {
+        console.error('Error procesando imagen:', error);
+        await sendWhatsAppMessage(from, '❌ No pude procesar tu imagen. Por favor intenta de nuevo.');
+        return res.status(500).json({ status: 'error', message: error.message });
+      }
+    }
+
+    // FLUJO 2: Usuario envía documento (después de enviar imagen)
+    if (messageText && nivel === ESTADO_ESPERANDO_DOCUMENTO) {
+      console.log(`📄 Documento recibido de ${from}: ${messageText}`);
+
+      try {
+        const documento = messageText.trim();
+
+        // 1. Validar formato de cédula
+        if (!esCedula(documento)) {
+          await sendWhatsAppMessage(from, `❌ Por favor escribe un número de documento válido (solo números).\n\nEjemplo: 1234567890`);
+          return res.status(200).json({ status: 'ok', message: 'Documento inválido' });
+        }
+
+        // 2. Marcar como pagado
+        await sendWhatsAppMessage(from, `⏳ Procesando pago para documento ${documento}...`);
+
+        const resultadoPago = await marcarPagado(documento);
+
+        if (!resultadoPago.success) {
+          await sendWhatsAppMessage(from, `❌ No encontré un registro con el documento ${documento}.\n\nVerifica que:\n• El número esté correcto\n• Ya hayas realizado tu examen médico`);
+          return res.status(200).json({ status: 'ok', message: 'Documento no encontrado' });
+        }
+
+        // 3. Generar URL del certificado
+        const historiaClinicaId = resultadoPago.historiaClinicaId;
+
+        if (!historiaClinicaId) {
+          await sendWhatsAppMessage(from, `✅ *Pago registrado*\n\n⚠️ No pude generar el enlace del certificado. Un asesor te contactará pronto.`);
+          return res.status(200).json({ status: 'ok', message: 'Pago registrado sin ID' });
+        }
+
+        const pdfUrl = `https://bsl-utilidades-yp78a.ondigitalocean.app/static/solicitar-certificado.html?id=${historiaClinicaId}`;
+
+        // 4. Enviar respuesta con el enlace
+        const mensajeFinal = `🎉 *¡Pago registrado exitosamente!*\n\n✅ Documento: ${documento}\n📄 Puedes descargar tu certificado médico aquí:\n\n${pdfUrl}\n\n¡Gracias por tu pago!`;
+        await sendWhatsAppMessage(from, mensajeFinal);
+
+        // 5. Limpiar estado
+        await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
+          userId: from,
+          nombre: message.from_name || '',
+          mensajes: conversationData.mensajes,
+          observaciones: '' // Reset
+        });
+
+        console.log(`✅ Pago procesado para ${from} - Documento: ${documento}`);
+        return res.status(200).json({ status: 'ok', message: 'Pago procesado' });
+
+      } catch (error) {
+        console.error('Error procesando documento:', error);
+        await sendWhatsAppMessage(from, '❌ Hubo un error procesando tu pago. Por favor intenta de nuevo.');
+        return res.status(500).json({ status: 'error', message: error.message });
+      }
+    }
+
+    // Si no está en el flujo de pagos, ignorar
+    return res.status(200).json({ status: 'ok', message: 'Not in payment flow' });
+
+  } catch (error) {
+    console.error('Error en webhook-pagos:', error);
+    return res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+app.get('/webhook-pagos', (req, res) => {
+  res.status(200).send('Webhook de pagos is active');
 });
 
 // Endpoint de salud
