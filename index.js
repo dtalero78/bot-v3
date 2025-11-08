@@ -128,14 +128,10 @@ app.post('/webhook', async (req, res) => {
       return res.status(200).json({ status: 'ok', message: 'No message found' });
     }
 
-    // Ignorar mensajes enviados por el bot
-    if (message.from_me) {
-      return res.status(200).json({ status: 'ok', message: 'Message from bot ignored' });
-    }
-
     // Extraer información del mensaje
     const from = message.from;
     const messageText = message.text?.body || message.body || '';
+    const chatId = message.chat_id;
 
     if (!messageText) {
       return res.status(200).json({ status: 'ok', message: 'Empty message' });
@@ -143,20 +139,18 @@ app.post('/webhook', async (req, res) => {
 
     console.log(`Mensaje de ${from}: ${messageText}`);
 
-    // 👨‍💼 VERIFICAR SI EL MENSAJE ES DEL ADMIN
-    if (from === ADMIN_NUMBER) {
+    // 👨‍💼 VERIFICAR SI EL MENSAJE ES DEL ADMIN (incluso si from_me es true)
+    if (from === ADMIN_NUMBER && message.from_me) {
       console.log('📨 Mensaje del administrador detectado');
 
       // Verificar si el admin quiere detener el bot
       if (messageText.includes('...transfiriendo con asesor')) {
-        // Extraer el userId del chat (esto dependerá de cómo Whapi envíe la info)
-        // Por ahora, asumimos que el admin escribe esto en un chat con un usuario
-        // Necesitarás ajustar esto según la estructura real del webhook
-        const chatId = message.chat?.id || message.to;
+        // Extraer el número del usuario del chat_id (remover @s.whatsapp.net)
+        const userId = chatId.replace('@s.whatsapp.net', '');
 
-        if (chatId && chatId !== ADMIN_NUMBER) {
-          await updateStopBot(chatId, true);
-          console.log(`🛑 Bot detenido para ${chatId} por el administrador`);
+        if (userId && userId !== ADMIN_NUMBER) {
+          await updateStopBot(userId, true);
+          console.log(`🛑 Bot detenido para ${userId} por el administrador`);
         }
       }
 
@@ -165,6 +159,11 @@ app.post('/webhook', async (req, res) => {
         status: 'ok',
         message: 'Admin message processed'
       });
+    }
+
+    // Ignorar otros mensajes enviados por el bot (que no son del admin)
+    if (message.from_me) {
+      return res.status(200).json({ status: 'ok', message: 'Message from bot ignored' });
     }
 
     // 🛑 VERIFICAR SI EL USUARIO TIENE STOPBOT ACTIVO
