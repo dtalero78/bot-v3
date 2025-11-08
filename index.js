@@ -21,6 +21,9 @@ const WHAPI_TOKEN = process.env.WHAPI_KEY;
 // Configuración de Wix Backend
 const WIX_BACKEND_URL = process.env.WIX_BACKEND_URL;
 
+// Número del administrador
+const ADMIN_NUMBER = process.env.ADMIN_NUMBER;
+
 // Almacenar conversaciones en memoria (en producción, usar una base de datos)
 const conversations = new Map();
 
@@ -73,6 +76,24 @@ async function checkStopBot(userId) {
   }
 }
 
+// Función para actualizar stopBot en WHP
+async function updateStopBot(userId, stopBot = true) {
+  try {
+    const response = await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
+      userId: userId,
+      nombre: '',
+      mensajes: [],
+      stopBot: stopBot
+    });
+
+    console.log(`✅ stopBot actualizado a ${stopBot} para usuario ${userId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error actualizando stopBot:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
 // Función para obtener respuesta de OpenAI
 async function getAIResponse(userMessage, conversationHistory = []) {
   try {
@@ -122,6 +143,30 @@ app.post('/webhook', async (req, res) => {
 
     console.log(`Mensaje de ${from}: ${messageText}`);
 
+    // 👨‍💼 VERIFICAR SI EL MENSAJE ES DEL ADMIN
+    if (from === ADMIN_NUMBER) {
+      console.log('📨 Mensaje del administrador detectado');
+
+      // Verificar si el admin quiere detener el bot
+      if (messageText.includes('...transfiriendo con asesor')) {
+        // Extraer el userId del chat (esto dependerá de cómo Whapi envíe la info)
+        // Por ahora, asumimos que el admin escribe esto en un chat con un usuario
+        // Necesitarás ajustar esto según la estructura real del webhook
+        const chatId = message.chat?.id || message.to;
+
+        if (chatId && chatId !== ADMIN_NUMBER) {
+          await updateStopBot(chatId, true);
+          console.log(`🛑 Bot detenido para ${chatId} por el administrador`);
+        }
+      }
+
+      // Los mensajes del admin no se procesan con el bot
+      return res.status(200).json({
+        status: 'ok',
+        message: 'Admin message processed'
+      });
+    }
+
     // 🛑 VERIFICAR SI EL USUARIO TIENE STOPBOT ACTIVO
     const isStopped = await checkStopBot(from);
     if (isStopped) {
@@ -160,9 +205,11 @@ app.post('/webhook', async (req, res) => {
       // Aquí podrías agregar lógica adicional si es necesario
       await sendWhatsAppMessage(from, aiResponse);
     } else if (aiResponse.includes('...transfiriendo con asesor')) {
-      // Enviar mensaje y detener el bot para este usuario
+      // Enviar mensaje, marcar stopBot y detener el bot para este usuario
       await sendWhatsAppMessage(from, aiResponse);
+      await updateStopBot(from, true);
       conversations.delete(from);
+      console.log(`🤖 Bot auto-detenido para ${from} (transferencia a asesor)`);
     } else {
       // Enviar respuesta normal
       await sendWhatsAppMessage(from, aiResponse);
