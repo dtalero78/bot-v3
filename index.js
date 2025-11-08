@@ -138,6 +138,8 @@ app.post('/webhook', async (req, res) => {
     }
 
     console.log(`Mensaje de ${from}: ${messageText}`);
+    console.log(`🔍 Debug: from="${from}", ADMIN_NUMBER="${ADMIN_NUMBER}", from_me=${message.from_me}`);
+    console.log(`🔍 Debug: chatId="${chatId}"`);
 
     // 👨‍💼 VERIFICAR SI EL MENSAJE ES DEL ADMIN (exactamente como el ejemplo)
     if (from === ADMIN_NUMBER && message.from_me) {
@@ -145,18 +147,26 @@ app.post('/webhook', async (req, res) => {
 
       // Extraer el userId del chat_id (remover @s.whatsapp.net)
       const userId = chatId ? chatId.split('@')[0].trim() : null;
+      console.log(`🔍 Debug: userId extraído="${userId}"`);
 
       if (!userId) {
+        console.log('❌ No se pudo extraer userId del chatId');
         return res.status(200).json({ status: 'ok', message: 'No chatId found' });
       }
 
+      console.log(`🔍 Debug: messageText="${messageText}"`);
+
       // Verificar si el admin quiere detener o reactivar el bot
       if (messageText === '...transfiriendo con asesor') {
+        console.log(`🎯 Comando detectado: detener bot para ${userId}`);
         await updateStopBot(userId, true);
         console.log(`🛑 Bot detenido para ${userId} por el administrador`);
       } else if (messageText === '...te dejo con el bot 🤖') {
+        console.log(`🎯 Comando detectado: reactivar bot para ${userId}`);
         await updateStopBot(userId, false);
         console.log(`✅ Bot reactivado para ${userId} por el administrador`);
+      } else {
+        console.log(`⚠️ Mensaje del admin no coincide con comandos conocidos`);
       }
 
       // Los mensajes del admin no se procesan con el bot
