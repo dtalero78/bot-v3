@@ -24,8 +24,8 @@ const WIX_BACKEND_URL = process.env.WIX_BACKEND_URL;
 // Número del administrador
 const ADMIN_NUMBER = process.env.ADMIN_NUMBER;
 
-// Almacenar conversaciones en memoria (en producción, usar una base de datos)
-const conversations = new Map();
+// NOTA: El historial de conversaciones ahora se guarda en WHP (base de datos Wix)
+// Ya no usamos Map() en memoria para persistir entre reinicios
 
 // Función para enviar mensajes a través de Whapi
 async function sendWhatsAppMessage(to, message) {
@@ -52,44 +52,55 @@ async function sendWhatsAppMessage(to, message) {
   }
 }
 
-// Función para verificar si el usuario tiene stopBot activo en WHP
-async function checkStopBot(userId) {
+// Función para obtener la conversación completa desde WHP
+async function getConversationFromDB(userId) {
   try {
     const response = await axios.get(`${WIX_BACKEND_URL}/_functions/obtenerConversacion`, {
       params: { userId }
     });
 
-    if (response.data && response.data.stopBot === true) {
-      console.log(`🛑 Usuario ${userId} tiene stopBot activo. No se enviará respuesta.`);
-      return true;
+    if (response.data) {
+      return {
+        stopBot: response.data.stopBot === true,
+        mensajes: response.data.mensajes || [],
+        observaciones: response.data.observaciones || '',
+        threadId: response.data.threadId || ''
+      };
     }
 
-    return false;
+    return { stopBot: false, mensajes: [], observaciones: '', threadId: '' };
   } catch (error) {
-    // Si no existe el usuario en la BD o hay error, permitir que el bot responda
+    // Si no existe el usuario en la BD o hay error, devolver valores por defecto
     if (error.response?.status === 404 || error.response?.status === 400) {
-      console.log(`ℹ️ Usuario ${userId} no encontrado en WHP. Permitiendo interacción.`);
-      return false;
+      console.log(`ℹ️ Usuario ${userId} no encontrado en WHP. Iniciando nueva conversación.`);
+      return { stopBot: false, mensajes: [], observaciones: '', threadId: '' };
     }
-    console.error('Error consultando stopBot:', error.message);
-    return false;
+    console.error('Error consultando WHP:', error.message);
+    return { stopBot: false, mensajes: [], observaciones: '', threadId: '' };
   }
 }
 
-// Función para actualizar stopBot en WHP
-async function updateStopBot(userId, stopBot = true) {
+// Función para guardar conversación en WHP
+async function saveConversationToDB(userId, mensajes, stopBot = false, nombre = '') {
   try {
+    // Convertir el formato OpenAI a formato WHP
+    const mensajesWHP = mensajes.map(msg => ({
+      from: msg.role === 'user' ? 'usuario' : 'bot',
+      mensaje: msg.content,
+      timestamp: new Date().toISOString()
+    }));
+
     const response = await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
       userId: userId,
-      nombre: '',
-      mensajes: [],
+      nombre: nombre,
+      mensajes: mensajesWHP,
       stopBot: stopBot
     });
 
-    console.log(`✅ stopBot actualizado a ${stopBot} para usuario ${userId}`);
+    console.log(`💾 Conversación guardada para ${userId} (${mensajes.length} mensajes)`);
     return response.data;
   } catch (error) {
-    console.error('Error actualizando stopBot:', error.response?.data || error.message);
+    console.error('Error guardando conversación:', error.response?.data || error.message);
     throw error;
   }
 }
@@ -159,11 +170,11 @@ app.post('/webhook', async (req, res) => {
       // Verificar si el admin quiere detener o reactivar el bot
       if (messageText === '...transfiriendo con asesor') {
         console.log(`🎯 Comando detectado: detener bot para ${userId}`);
-        await updateStopBot(userId, true);
+        await saveConversationToDB(userId, [], true);
         console.log(`🛑 Bot detenido para ${userId} por el administrador`);
       } else if (messageText === '...te dejo con el bot 🤖') {
         console.log(`🎯 Comando detectado: reactivar bot para ${userId}`);
-        await updateStopBot(userId, false);
+        await saveConversationToDB(userId, [], false);
         console.log(`✅ Bot reactivado para ${userId} por el administrador`);
       } else {
         console.log(`⚠️ Mensaje del admin no coincide con comandos conocidos`);
@@ -181,9 +192,10 @@ app.post('/webhook', async (req, res) => {
       return res.status(200).json({ status: 'ok', message: 'Message from bot ignored' });
     }
 
-    // 🛑 VERIFICAR SI EL USUARIO TIENE STOPBOT ACTIVO
-    const isStopped = await checkStopBot(from);
-    if (isStopped) {
+    // 🛑 OBTENER CONVERSACIÓN DESDE LA BASE DE DATOS
+    const conversationData = await getConversationFromDB(from);
+
+    if (conversationData.stopBot) {
       console.log(`⛔ Bot detenido para ${from}. No se procesará el mensaje.`);
       return res.status(200).json({
         status: 'ok',
@@ -191,29 +203,33 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
-    // Obtener historial de conversación
-    let conversationHistory = conversations.get(from) || [];
+    // Convertir mensajes de WHP a formato OpenAI
+    let conversationHistory = conversationData.mensajes.map(msg => ({
+      role: msg.from === 'usuario' ? 'user' : 'assistant',
+      content: msg.mensaje
+    }));
+
+    // Mantener solo los últimos 10 mensajes (5 intercambios) para el contexto
+    if (conversationHistory.length > 10) {
+      conversationHistory = conversationHistory.slice(-10);
+    }
 
     // Obtener respuesta de AI
     const aiResponse = await getAIResponse(messageText, conversationHistory);
 
-    // Actualizar historial
+    // Actualizar historial con el nuevo intercambio
     conversationHistory.push(
       { role: 'user', content: messageText },
       { role: 'assistant', content: aiResponse }
     );
 
-    // Mantener solo los últimos 10 mensajes (5 intercambios)
-    if (conversationHistory.length > 10) {
-      conversationHistory = conversationHistory.slice(-10);
-    }
-
-    conversations.set(from, conversationHistory);
+    // Guardar en la base de datos
+    await saveConversationToDB(from, conversationHistory);
 
     // Verificar comandos especiales
     if (aiResponse === 'VOLVER_AL_MENU') {
       // Limpiar historial y enviar menú
-      conversations.delete(from);
+      await saveConversationToDB(from, []);
       await sendWhatsAppMessage(from, '🩺 Nuestras opciones:\nVirtual – $46.000 COP\nPresencial – $69.000 COP');
     } else if (aiResponse === 'AGENDA_COMPLETADA') {
       // Aquí podrías agregar lógica adicional si es necesario
@@ -221,8 +237,7 @@ app.post('/webhook', async (req, res) => {
     } else if (aiResponse.includes('...transfiriendo con asesor')) {
       // Enviar mensaje, marcar stopBot y detener el bot para este usuario
       await sendWhatsAppMessage(from, aiResponse);
-      await updateStopBot(from, true);
-      conversations.delete(from);
+      await saveConversationToDB(from, [], true);
       console.log(`🤖 Bot auto-detenido para ${from} (transferencia a asesor)`);
     } else {
       // Enviar respuesta normal
@@ -246,7 +261,7 @@ app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    conversations: conversations.size
+    persistence: 'WHP Database (Wix)'
   });
 });
 
