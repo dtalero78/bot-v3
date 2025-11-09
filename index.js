@@ -338,19 +338,22 @@ app.post('/webhook', async (req, res) => {
     // Verificar comandos especiales
     if (aiResponse === 'VOLVER_AL_MENU') {
       // Limpiar historial y enviar menú
-      await saveConversationToDB(from, []);
+      await saveConversationToDB(from, [], false, message.from_name || '');
       await sendWhatsAppMessage(from, '🩺 Nuestras opciones:\nVirtual – $46.000 COP\nPresencial – $69.000 COP');
     } else if (aiResponse === 'AGENDA_COMPLETADA') {
-      // Aquí podrías agregar lógica adicional si es necesario
+      // Guardar conversación y enviar respuesta
       await sendWhatsAppMessage(from, aiResponse);
+      await saveConversationToDB(from, conversationHistory, false, message.from_name || '');
     } else if (aiResponse.includes('...transfiriendo con asesor')) {
-      // Enviar mensaje, marcar stopBot y detener el bot para este usuario
+      // Enviar mensaje, guardar conversación y marcar stopBot
       await sendWhatsAppMessage(from, aiResponse);
+      await saveConversationToDB(from, conversationHistory, false, message.from_name || '');
       await updateStopBotOnly(from, true);
       console.log(`🤖 Bot auto-detenido para ${from} (transferencia a asesor)`);
     } else {
-      // Enviar respuesta normal
+      // Enviar respuesta normal y guardar conversación
       await sendWhatsAppMessage(from, aiResponse);
+      await saveConversationToDB(from, conversationHistory, false, message.from_name || '');
     }
 
     res.status(200).json({ status: 'ok', message: 'Message processed' });
