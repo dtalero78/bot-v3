@@ -27,8 +27,9 @@ const ADMIN_NUMBER = process.env.ADMIN_NUMBER;
 // NOTA: El historial de conversaciones ahora se guarda en WHP (base de datos Wix)
 // Ya no usamos Map() en memoria para persistir entre reinicios
 
-// Estados para el flujo de pagos
+// Estados para el flujo de pagos (en memoria)
 const ESTADO_ESPERANDO_DOCUMENTO = 'esperando_documento';
+const estadoPagos = new Map(); // userId -> 'esperando_documento' o undefined
 
 // Función para enviar mensajes a través de Whapi
 async function sendWhatsAppMessage(to, message) {
@@ -390,9 +391,8 @@ app.post('/webhook-pagos', async (req, res) => {
       return res.status(200).json({ status: 'ok', message: 'Message from bot ignored' });
     }
 
-    // Obtener conversación desde BD
-    const conversationData = await getConversationFromDB(from);
-    const nivel = conversationData.observaciones; // Usamos observaciones como nivel/estado
+    // Obtener estado del flujo de pago (en memoria)
+    const estadoPago = estadoPagos.get(from);
 
     // FLUJO 1: Usuario envía imagen (comprobante de pago)
     if (messageType === 'image') {
@@ -424,15 +424,10 @@ app.post('/webhook-pagos', async (req, res) => {
         const mensaje = `✅ *Comprobante de pago recibido*\n\nPara completar el proceso y generar tu certificado, escribe tu *número de documento* (solo números, sin puntos).\n\nEjemplo: 1234567890`;
         await sendWhatsAppMessage(from, mensaje);
 
-        // 4. Guardar estado de pago (SOLO observaciones, SIN mensajes del bot)
-        await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
-          userId: from,
-          nombre: message.from_name || '',
-          mensajes: [],
-          observaciones: ESTADO_ESPERANDO_DOCUMENTO
-        });
+        // Guardar estado en memoria
+        estadoPagos.set(from, ESTADO_ESPERANDO_DOCUMENTO);
 
-        console.log(`💾 Estado: esperando documento de ${from}`);
+        console.log(`✅ Comprobante validado para ${from}`);
         return res.status(200).json({ status: 'ok', message: 'Comprobante validado' });
 
       } catch (error) {
@@ -443,7 +438,7 @@ app.post('/webhook-pagos', async (req, res) => {
     }
 
     // FLUJO 2: Usuario envía documento (después de enviar imagen)
-    if (messageText && nivel === ESTADO_ESPERANDO_DOCUMENTO) {
+    if (messageText && estadoPago === ESTADO_ESPERANDO_DOCUMENTO) {
       console.log(`📄 Documento recibido de ${from}: ${messageText}`);
 
       try {
@@ -479,13 +474,8 @@ app.post('/webhook-pagos', async (req, res) => {
         const mensajeFinal = `🎉 *¡Pago registrado exitosamente!*\n\n✅ Documento: ${documento}\n📄 Puedes descargar tu certificado médico aquí:\n\n${pdfUrl}\n\n¡Gracias por tu pago!`;
         await sendWhatsAppMessage(from, mensajeFinal);
 
-        // 5. Limpiar estado de pago
-        await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
-          userId: from,
-          nombre: message.from_name || '',
-          mensajes: [],
-          observaciones: '' // Reset
-        });
+        // Limpiar estado en memoria
+        estadoPagos.delete(from);
 
         console.log(`✅ Pago procesado para ${from} - Documento: ${documento}`);
         return res.status(200).json({ status: 'ok', message: 'Pago procesado' });
