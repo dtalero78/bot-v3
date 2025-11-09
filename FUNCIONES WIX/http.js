@@ -514,31 +514,6 @@ export async function post_guardarConversacion(request) {
             console.log(`✅ Nueva conversación creada en WHP para userId: ${userId}`);
         }
 
-        // --- REENVIAR A OPENAI DESDE WIX DESPUÉS DE GUARDAR ---
-        // Si tienes threadId y hay mensajes nuevos:
-        if (threadId && nuevosFiltrados.length > 0) {
-            // Por cada mensaje nuevo, llama a tu backend Flask
-            for (const msg of nuevosFiltrados) {
-                try {
-                    await fetch("https://agentes-bot-bsl-vf9hm.ondigitalocean.app//reenviar_a_openai", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                role: msg.from, // Puede ser "usuario", "sistema", "admin", "wix"
-                                mensaje: msg.mensaje,
-                                thread_id: threadId
-                            })
-                        })
-                        .then(response => response.json())
-                        .then(res => console.log("Mensaje reenviado a OpenAI:", res))
-                        .catch(err => console.error("❌ Error reenviando a OpenAI:", err));
-                } catch (e) {
-                    console.error("❌ Error en fetch a Flask para OpenAI:", e);
-                }
-            }
-        }
-        // ------------------------------------------------------
-
         return {
             status: 200,
             headers: { "Content-Type": "application/json" },
@@ -656,7 +631,7 @@ export async function post_marcarPagado(request) {
 
         const actualizado = await wixData.update("HistoriaClinica", item);
 
-        return ok({ body: { success: true } });
+        return ok({ body: { success: true, _id: item._id } });
 
     } catch (e) {
         console.error("❌ Error en guardarObservacion:", e);

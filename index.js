@@ -581,6 +581,9 @@ app.post('/webhook-pagos', async (req, res) => {
         const mensajeFinal = `🎉 *¡Pago registrado exitosamente!*\n\n✅ Documento: ${documento}\n📄 Puedes descargar tu certificado médico aquí:\n\n${pdfUrl}\n\n¡Gracias por tu pago!`;
         await sendWhatsAppMessage(from, mensajeFinal);
 
+        // 5. Marcar stopBot como true para detener el bot
+        await updateStopBotOnly(from, true);
+
         // Limpiar estado en memoria
         estadoPagos.delete(from);
 
