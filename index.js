@@ -24,12 +24,10 @@ const WIX_BACKEND_URL = process.env.WIX_BACKEND_URL;
 // Número del administrador
 const ADMIN_NUMBER = process.env.ADMIN_NUMBER;
 
-// NOTA: El historial de conversaciones ahora se guarda en WHP (base de datos Wix)
-// Ya no usamos Map() en memoria para persistir entre reinicios
-
-// Estados para el flujo de pagos (en memoria)
-const ESTADO_ESPERANDO_DOCUMENTO = 'esperando_documento';
-const estadoPagos = new Map(); // userId -> 'esperando_documento' o undefined
+// ========================================
+// CONFIGURACIÓN DEL BOT CONVERSACIONAL
+// ========================================
+// NOTA: El historial de conversaciones se guarda en WHP (base de datos Wix)
 
 // Función para enviar mensajes a través de Whapi
 async function sendWhatsAppMessage(to, message) {
@@ -150,6 +148,12 @@ async function saveConversationToDB(userId, mensajes, stopBot = false, nombre = 
 // ========================================
 // FUNCIONES PARA FLUJO DE PAGOS
 // ========================================
+// NOTA: Este flujo es INDEPENDIENTE del bot conversacional
+// No guarda nada en WHP, solo procesa pagos y envía certificados
+
+// Estado en memoria para flujo de pagos (imagen → documento)
+const ESTADO_ESPERANDO_DOCUMENTO = 'esperando_documento';
+const estadoPagos = new Map(); // userId -> 'esperando_documento' o undefined
 
 // Validar si es cédula (solo números, 6-10 dígitos)
 function esCedula(texto) {
@@ -241,7 +245,13 @@ async function getAIResponse(userMessage, conversationHistory = []) {
   }
 }
 
-// Webhook para recibir mensajes de Whapi
+// ========================================
+// WEBHOOK BOT CONVERSACIONAL
+// ========================================
+// Maneja SOLO conversaciones de texto con OpenAI
+// - Guarda conversaciones en WHP
+// - Maneja stopBot (admin control)
+// - NO procesa imágenes (van a /webhook-pagos)
 app.post('/webhook', async (req, res) => {
   try {
     console.log('Webhook recibido:', JSON.stringify(req.body, null, 2));
@@ -254,8 +264,15 @@ app.post('/webhook', async (req, res) => {
 
     // Extraer información del mensaje
     const from = message.from;
+    const messageType = message.type;
     const messageText = message.text?.body || message.body || '';
     const chatId = message.chat_id;
+
+    // Ignorar imágenes - son procesadas por /webhook-pagos
+    if (messageType === 'image') {
+      console.log(`📸 Imagen ignorada en bot conversacional (procesada en /webhook-pagos)`);
+      return res.status(200).json({ status: 'ok', message: 'Image ignored - handled by payment webhook' });
+    }
 
     if (!messageText) {
       return res.status(200).json({ status: 'ok', message: 'Empty message' });
@@ -370,8 +387,14 @@ app.get('/webhook', (req, res) => {
 });
 
 // ========================================
-// WEBHOOK PARA VALIDACIÓN DE PAGOS
+// WEBHOOK VALIDACIÓN DE PAGOS
 // ========================================
+// Maneja SOLO validación de pagos con imágenes
+// - Valida comprobante con OpenAI Vision
+// - Marca pagado en Wix
+// - Envía URL del certificado
+// - NO guarda conversaciones en WHP
+// - Estado en memoria (se pierde al reiniciar)
 app.post('/webhook-pagos', async (req, res) => {
   try {
     console.log('💰 Webhook de pagos recibido:', JSON.stringify(req.body, null, 2));
