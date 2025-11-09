@@ -194,6 +194,35 @@ async function clasificarImagen(base64Image, mimeType) {
   }
 }
 
+// Consultar cita en HistoriaClinica por número de documento
+async function consultarCita(numeroDocumento) {
+  try {
+    const response = await axios.get(`${WIX_BACKEND_URL}/_functions/historiaClinicaPorNumeroId`, {
+      params: {
+        numeroId: numeroDocumento
+      }
+    });
+
+    if (response.data && response.data.data) {
+      const paciente = response.data.data;
+      return {
+        success: true,
+        paciente: {
+          nombre: `${paciente.primerNombre || ''} ${paciente.primerApellido || ''}`.trim(),
+          fechaConsulta: paciente.fechaConsulta,
+          celular: paciente.celular,
+          empresa: paciente.empresa
+        }
+      };
+    } else {
+      return { success: false, message: 'No se encontró información para ese número de documento' };
+    }
+  } catch (error) {
+    console.error('Error consultando cita:', error.response?.data || error.message);
+    return { success: false, message: 'No se encontró cita programada con ese documento' };
+  }
+}
+
 // Marcar como pagado en Wix y obtener _id del item
 async function marcarPagado(cedula) {
   try {
@@ -331,6 +360,52 @@ app.post('/webhook', async (req, res) => {
         status: 'ok',
         message: 'Bot stopped for this user'
       });
+    }
+
+    // 🔍 VERIFICAR SI EL USUARIO ENVIÓ UNA CÉDULA PARA CONSULTAR SU CITA
+    if (esCedula(messageText)) {
+      console.log(`🆔 Detectada cédula: ${messageText}. Consultando cita...`);
+
+      const citaInfo = await consultarCita(messageText);
+
+      if (citaInfo.success) {
+        const fechaConsulta = new Date(citaInfo.paciente.fechaConsulta);
+        const fechaFormateada = fechaConsulta.toLocaleDateString('es-CO', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+        const horaFormateada = fechaConsulta.toLocaleTimeString('es-CO', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+
+        const respuesta = `📅 ¡Hola ${citaInfo.paciente.nombre}!\n\nTu consulta está programada para:\n\n📆 ${fechaFormateada}\n🕐 ${horaFormateada}\n\n¿Necesitas algo más?`;
+
+        await sendWhatsAppMessage(from, respuesta);
+
+        // Guardar en historial
+        const conversationHistory = [
+          { role: 'user', content: messageText },
+          { role: 'assistant', content: respuesta }
+        ];
+        await saveConversationToDB(from, conversationHistory, false, message.from_name || '');
+
+        return res.status(200).json({ status: 'ok', message: 'Appointment info sent' });
+      } else {
+        const respuesta = `❌ No encontré una cita programada con el documento ${messageText}.\n\n¿Deseas agendar una cita nueva?`;
+        await sendWhatsAppMessage(from, respuesta);
+
+        const conversationHistory = [
+          { role: 'user', content: messageText },
+          { role: 'assistant', content: respuesta }
+        ];
+        await saveConversationToDB(from, conversationHistory, false, message.from_name || '');
+
+        return res.status(200).json({ status: 'ok', message: 'No appointment found' });
+      }
     }
 
     // Convertir mensajes de WHP a formato OpenAI
