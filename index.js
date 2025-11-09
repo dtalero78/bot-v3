@@ -421,12 +421,21 @@ app.post('/webhook-pagos', async (req, res) => {
         const mensaje = `✅ *Comprobante de pago recibido*\n\nPara completar el proceso y generar tu certificado, escribe tu *número de documento* (solo números, sin puntos).\n\nEjemplo: 1234567890`;
         await sendWhatsAppMessage(from, mensaje);
 
-        // 4. Guardar estado
+        // 4. Guardar estado (solo actualizar nivel, conservar mensajes existentes)
+        // Obtener mensajes actuales si existen
+        const mensajesActuales = conversationData.mensajes.length > 0
+          ? conversationData.mensajes
+          : [{
+              from: 'sistema',
+              mensaje: 'Comprobante de pago recibido',
+              timestamp: new Date().toISOString()
+            }];
+
         await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
           userId: from,
           nombre: message.from_name || '',
-          mensajes: conversationData.mensajes,
-          observaciones: ESTADO_ESPERANDO_DOCUMENTO
+          mensajes: mensajesActuales,
+          nivel: ESTADO_ESPERANDO_DOCUMENTO
         });
 
         console.log(`💾 Estado: esperando documento de ${from}`);
