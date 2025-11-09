@@ -371,6 +371,7 @@ app.post('/webhook', async (req, res) => {
 
       if (citaInfo.success) {
         const fechaAtencion = new Date(citaInfo.paciente.fechaAtencion);
+        const ahora = new Date();
 
         // Formato: 12 Nov 2025 9:00
         const dia = fechaAtencion.toLocaleDateString('es-CO', {
@@ -396,12 +397,15 @@ app.post('/webhook', async (req, res) => {
 
         await sendWhatsAppMessage(from, respuesta);
 
+        // Verificar si la fecha ya pasó
+        const fechaPasada = fechaAtencion < ahora;
+
         // Guardar en historial
         const conversationHistory = [
           { role: 'user', content: messageText },
           { role: 'assistant', content: respuesta }
         ];
-        await saveConversationToDB(from, conversationHistory, false, message.from_name || '');
+        await saveConversationToDB(from, conversationHistory, fechaPasada, message.from_name || '');
 
         return res.status(200).json({ status: 'ok', message: 'Appointment info sent' });
       } else {
