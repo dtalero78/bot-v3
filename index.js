@@ -374,12 +374,14 @@ app.post('/webhook', async (req, res) => {
           weekday: 'long',
           year: 'numeric',
           month: 'long',
-          day: 'numeric'
+          day: 'numeric',
+          timeZone: 'America/Bogota'
         });
         const horaFormateada = fechaAtencion.toLocaleTimeString('es-CO', {
           hour: '2-digit',
           minute: '2-digit',
-          hour12: true
+          hour12: true,
+          timeZone: 'America/Bogota'
         });
 
         const respuesta = `📅 ¡Hola ${citaInfo.paciente.nombre}!\n\nTu consulta está programada para:\n\n📆 ${fechaFormateada}\n🕐 ${horaFormateada}\n\n¿Necesitas algo más?`;
