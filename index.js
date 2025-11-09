@@ -370,21 +370,28 @@ app.post('/webhook', async (req, res) => {
 
       if (citaInfo.success) {
         const fechaAtencion = new Date(citaInfo.paciente.fechaAtencion);
-        const fechaFormateada = fechaAtencion.toLocaleDateString('es-CO', {
-          weekday: 'long',
-          year: 'numeric',
-          month: 'long',
+
+        // Formato: 12 Nov 2025 9:00
+        const dia = fechaAtencion.toLocaleDateString('es-CO', {
           day: 'numeric',
           timeZone: 'America/Bogota'
         });
-        const horaFormateada = fechaAtencion.toLocaleTimeString('es-CO', {
-          hour: '2-digit',
+        const mes = fechaAtencion.toLocaleDateString('es-CO', {
+          month: 'short',
+          timeZone: 'America/Bogota'
+        });
+        const año = fechaAtencion.toLocaleDateString('es-CO', {
+          year: 'numeric',
+          timeZone: 'America/Bogota'
+        });
+        const hora = fechaAtencion.toLocaleTimeString('es-CO', {
+          hour: 'numeric',
           minute: '2-digit',
-          hour12: true,
+          hour12: false,
           timeZone: 'America/Bogota'
         });
 
-        const respuesta = `📅 ¡Hola ${citaInfo.paciente.nombre}!\n\nTu consulta está programada para:\n\n📆 ${fechaFormateada}\n🕐 ${horaFormateada}\n\n¿Necesitas algo más?`;
+        const respuesta = `${citaInfo.paciente.nombre} - ${dia} ${mes} ${año} ${hora}`;
 
         await sendWhatsAppMessage(from, respuesta);
 
