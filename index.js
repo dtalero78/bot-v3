@@ -116,7 +116,8 @@ async function updateStopBotOnly(userId, stopBot) {
       return createResponse.data;
     }
     console.error('Error actualizando stopBot:', error.response?.data || error.message);
-    throw error;
+    // No lanzar excepción, solo loguear - permite que el flujo continúe
+    return { success: false, error: error.message };
   }
 }
 
