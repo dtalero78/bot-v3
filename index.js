@@ -424,20 +424,11 @@ app.post('/webhook-pagos', async (req, res) => {
         const mensaje = `✅ *Comprobante de pago recibido*\n\nPara completar el proceso y generar tu certificado, escribe tu *número de documento* (solo números, sin puntos).\n\nEjemplo: 1234567890`;
         await sendWhatsAppMessage(from, mensaje);
 
-        // 4. Guardar estado (solo actualizar nivel, conservar mensajes existentes)
-        // Obtener mensajes actuales si existen
-        const mensajesActuales = conversationData.mensajes.length > 0
-          ? conversationData.mensajes
-          : [{
-              from: 'sistema',
-              mensaje: 'Comprobante de pago recibido',
-              timestamp: new Date().toISOString()
-            }];
-
+        // 4. Guardar estado de pago (SOLO observaciones, SIN mensajes del bot)
         await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
           userId: from,
           nombre: message.from_name || '',
-          mensajes: mensajesActuales,
+          mensajes: [],
           observaciones: ESTADO_ESPERANDO_DOCUMENTO
         });
 
@@ -488,11 +479,11 @@ app.post('/webhook-pagos', async (req, res) => {
         const mensajeFinal = `🎉 *¡Pago registrado exitosamente!*\n\n✅ Documento: ${documento}\n📄 Puedes descargar tu certificado médico aquí:\n\n${pdfUrl}\n\n¡Gracias por tu pago!`;
         await sendWhatsAppMessage(from, mensajeFinal);
 
-        // 5. Limpiar estado
+        // 5. Limpiar estado de pago
         await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
           userId: from,
           nombre: message.from_name || '',
-          mensajes: conversationData.mensajes,
+          mensajes: [],
           observaciones: '' // Reset
         });
 
