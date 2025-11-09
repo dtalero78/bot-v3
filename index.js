@@ -523,9 +523,13 @@ app.post('/webhook-pagos', async (req, res) => {
         const clasificacion = await clasificarImagen(base64Image, mimeType);
 
         if (clasificacion !== 'comprobante_pago') {
-          const mensaje = `❌ La imagen no parece ser un comprobante de pago válido.\n\nPor favor envía una imagen clara de tu:\n• Comprobante bancario\n• Transferencia\n• Recibo de pago`;
+          const mensaje = `...transfiriendo con asesor`;
           await sendWhatsAppMessage(from, mensaje);
-          return res.status(200).json({ status: 'ok', message: 'Imagen no válida' });
+
+          // Marcar stopBot como true para transferir a humano
+          await updateStopBotOnly(from, true);
+
+          return res.status(200).json({ status: 'ok', message: 'Imagen no válida - transferido a asesor' });
         }
 
         // 3. Comprobante válido - pedir documento
