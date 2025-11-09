@@ -209,7 +209,7 @@ async function consultarCita(numeroDocumento) {
         success: true,
         paciente: {
           nombre: `${paciente.primerNombre || ''} ${paciente.primerApellido || ''}`.trim(),
-          fechaConsulta: paciente.fechaConsulta,
+          fechaAtencion: paciente.fechaAtencion,
           celular: paciente.celular,
           empresa: paciente.empresa
         }
@@ -369,14 +369,14 @@ app.post('/webhook', async (req, res) => {
       const citaInfo = await consultarCita(messageText);
 
       if (citaInfo.success) {
-        const fechaConsulta = new Date(citaInfo.paciente.fechaConsulta);
-        const fechaFormateada = fechaConsulta.toLocaleDateString('es-CO', {
+        const fechaAtencion = new Date(citaInfo.paciente.fechaAtencion);
+        const fechaFormateada = fechaAtencion.toLocaleDateString('es-CO', {
           weekday: 'long',
           year: 'numeric',
           month: 'long',
           day: 'numeric'
         });
-        const horaFormateada = fechaConsulta.toLocaleTimeString('es-CO', {
+        const horaFormateada = fechaAtencion.toLocaleTimeString('es-CO', {
           hour: '2-digit',
           minute: '2-digit',
           hour12: true
