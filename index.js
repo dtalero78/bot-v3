@@ -579,7 +579,7 @@ app.post('/webhook-pagos', async (req, res) => {
         const pdfUrl = `https://bsl-utilidades-yp78a.ondigitalocean.app/static/solicitar-certificado.html?id=${historiaClinicaId}`;
 
         // 4. Enviar respuesta con el enlace
-        const mensajeFinal = `🎉 *¡Pago registrado exitosamente!*\n\n✅ Documento: ${documento}\n📄 Puedes descargar tu certificado médico aquí:\n\n${pdfUrl}\n\n¡Gracias por tu pago!`;
+        const mensajeFinal = `🎉 *¡Pago registrado exitosamente!*\n\nDescarga tu certificado haciendo clic en el siguiente link:\n\n${pdfUrl}`;
         await sendWhatsAppMessage(from, mensajeFinal);
 
         // 5. Marcar stopBot como true para detener el bot
