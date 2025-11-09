@@ -435,7 +435,7 @@ app.post('/webhook-pagos', async (req, res) => {
           userId: from,
           nombre: message.from_name || '',
           mensajes: mensajesActuales,
-          nivel: ESTADO_ESPERANDO_DOCUMENTO
+          observaciones: ESTADO_ESPERANDO_DOCUMENTO
         });
 
         console.log(`💾 Estado: esperando documento de ${from}`);
