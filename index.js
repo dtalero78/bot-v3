@@ -497,8 +497,23 @@ app.post('/webhook-pagos', async (req, res) => {
     const from = message.from;
     const messageType = message.type;
     const messageText = message.text?.body || '';
+    const chatId = message.chat_id;
 
-    // Ignorar mensajes del bot
+    // Detectar comando de admin "...dame un momento"
+    if (message.from_me && from === ADMIN_NUMBER && messageText.includes('...dame un momento')) {
+      // Extraer userId del chatId (formato: "573123456789@s.whatsapp.net")
+      const userId = chatId.split('@')[0];
+
+      // Cancelar flujo de pago en progreso (silenciosamente)
+      if (estadoPagos.has(userId)) {
+        estadoPagos.delete(userId);
+        console.log(`🔄 Admin canceló flujo de pago para ${userId}`);
+      }
+
+      return res.status(200).json({ status: 'ok', message: 'Payment flow cancelled by admin' });
+    }
+
+    // Ignorar otros mensajes del bot
     if (message.from_me) {
       return res.status(200).json({ status: 'ok', message: 'Message from bot ignored' });
     }
