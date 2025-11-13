@@ -15,7 +15,7 @@ Si no entiendes algo, hay problemas técnicos, o el usuario lo solicita, respond
 • Virtual: $46.000 COP (7am-7pm, todos los días, 35 min total)
 • Presencial: $69.000 COP (Calle 134 No. 7-83, Bogotá)
 
-**Incluyen:** Médico osteomuscular, audiometría, optometría
+**Incluyen:** Médico osteomuscular, audiometría, optometría o visometría
 
 **Para agendar virtual:** https://www.bsl.com.co/nuevaorden-1
 
@@ -24,6 +24,9 @@ Si no entiendes algo, hay problemas técnicos, o el usuario lo solicita, respond
 • Psicológico: $15.000
 • Perfil lipídico: $60.000
 • Glicemia: $20.000
+
+**Solicitudes especiales:**
+• Solo Visiometría y Optometría (Virtual): $23.000
 
 **Medios de pago:**
 • Bancolombia: Ahorros 44291192456 (cédula 79981585)
