@@ -298,6 +298,14 @@ app.post('/webhook', async (req, res) => {
     const messageText = message.text?.body || message.body || '';
     const chatId = message.chat_id;
 
+    // Detectar si el mensaje viene de un grupo de WhatsApp
+    const isGroupMessage = chatId && chatId.includes('@g.us');
+
+    if (isGroupMessage) {
+      console.log(`📱 Mensaje de grupo detectado en webhook principal. Ignorando mensaje de ${from}.`);
+      return res.status(200).json({ status: 'ok', message: 'Group message ignored' });
+    }
+
     // Ignorar imágenes - son procesadas por /webhook-pagos
     if (messageType === 'image') {
       console.log(`📸 Imagen ignorada en bot conversacional (procesada en /webhook-pagos)`);
@@ -498,6 +506,14 @@ app.post('/webhook-pagos', async (req, res) => {
     const messageType = message.type;
     const messageText = message.text?.body || '';
     const chatId = message.chat_id;
+
+    // Detectar si el mensaje viene de un grupo de WhatsApp
+    const isGroupMessage = chatId && chatId.includes('@g.us');
+
+    if (isGroupMessage) {
+      console.log(`📱 Mensaje de grupo detectado en webhook-pagos. Ignorando mensaje de ${from}.`);
+      return res.status(200).json({ status: 'ok', message: 'Group message ignored' });
+    }
 
     // Detectar comando de admin "...dame un momento"
     if (message.from_me && from === ADMIN_NUMBER && messageText.includes('...dame un momento')) {
