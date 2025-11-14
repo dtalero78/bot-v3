@@ -41,6 +41,7 @@ Si no entiendes algo, hay problemas técnicos, o el usuario lo solicita, respond
 4. Médico revisa y aprueba certificado
 5. Usuario paga
 6. Descarga certificado sin marca de agua
+7. El link de conexión se envía por whatsapp
 
 🎯 RESPUESTAS SEGÚN CONTEXTO:
 
