@@ -24,6 +24,9 @@ const WIX_BACKEND_URL = process.env.WIX_BACKEND_URL;
 // Número del administrador
 const ADMIN_NUMBER = process.env.ADMIN_NUMBER;
 
+// ID del grupo autorizado para consultas de cédula
+const GRUPO_CONSULTAS_ID = process.env.GRUPO_CONSULTAS_ID;
+
 // ========================================
 // CONFIGURACIÓN DEL BOT CONVERSACIONAL
 // ========================================
@@ -301,8 +304,11 @@ app.post('/webhook', async (req, res) => {
     // Detectar si el mensaje viene de un grupo de WhatsApp
     const isGroupMessage = chatId && chatId.includes('@g.us');
 
-    if (isGroupMessage) {
-      console.log(`📱 Mensaje de grupo detectado en webhook principal. Ignorando mensaje de ${from}.`);
+    // Verificar si es el grupo autorizado para consultas
+    const isAuthorizedGroup = GRUPO_CONSULTAS_ID && chatId === GRUPO_CONSULTAS_ID;
+
+    if (isGroupMessage && !isAuthorizedGroup) {
+      console.log(`📱 Mensaje de grupo no autorizado detectado. Ignorando mensaje de ${from}.`);
       return res.status(200).json({ status: 'ok', message: 'Group message ignored' });
     }
 
@@ -403,31 +409,57 @@ app.post('/webhook', async (req, res) => {
 
         const respuesta = `${citaInfo.paciente.nombre} - ${dia} ${mes} ${año} ${hora}`;
 
-        await sendWhatsAppMessage(from, respuesta);
+        // Si es un mensaje de grupo, responder al grupo; si no, responder al usuario
+        const destinatario = isAuthorizedGroup ? chatId : from;
+        await sendWhatsAppMessage(destinatario, respuesta);
 
-        // Verificar si la fecha ya pasó
-        const fechaPasada = fechaAtencion < ahora;
+        // Solo guardar en historial si es mensaje directo (no de grupo)
+        if (!isAuthorizedGroup) {
+          // Verificar si la fecha ya pasó
+          const fechaPasada = fechaAtencion < ahora;
 
-        // Guardar en historial
-        const conversationHistory = [
-          { role: 'user', content: messageText },
-          { role: 'assistant', content: respuesta }
-        ];
-        await saveConversationToDB(from, conversationHistory, fechaPasada, message.from_name || '');
+          // Guardar en historial
+          const conversationHistory = [
+            { role: 'user', content: messageText },
+            { role: 'assistant', content: respuesta }
+          ];
+          await saveConversationToDB(from, conversationHistory, fechaPasada, message.from_name || '');
+        }
 
         return res.status(200).json({ status: 'ok', message: 'Appointment info sent' });
       } else {
-        const respuesta = `❌ No encontré una cita programada con el documento ${messageText}.\n\n¿Deseas agendar una cita nueva?`;
-        await sendWhatsAppMessage(from, respuesta);
+        // Si no se encuentra la cita
+        let respuesta;
 
-        const conversationHistory = [
-          { role: 'user', content: messageText },
-          { role: 'assistant', content: respuesta }
-        ];
-        await saveConversationToDB(from, conversationHistory, false, message.from_name || '');
+        if (isAuthorizedGroup) {
+          // En grupo, respuesta más corta
+          respuesta = `❌ No encontré una cita programada con el documento ${messageText}`;
+        } else {
+          // En mensaje directo, respuesta con opción de agendar
+          respuesta = `❌ No encontré una cita programada con el documento ${messageText}.\n\n¿Deseas agendar una cita nueva?`;
+        }
+
+        const destinatario = isAuthorizedGroup ? chatId : from;
+        await sendWhatsAppMessage(destinatario, respuesta);
+
+        // Solo guardar en historial si es mensaje directo (no de grupo)
+        if (!isAuthorizedGroup) {
+          const conversationHistory = [
+            { role: 'user', content: messageText },
+            { role: 'assistant', content: respuesta }
+          ];
+          await saveConversationToDB(from, conversationHistory, false, message.from_name || '');
+        }
 
         return res.status(200).json({ status: 'ok', message: 'No appointment found' });
       }
+    }
+
+    // Si el mensaje viene del grupo autorizado y no es una cédula, ignorar
+    // (los mensajes de grupo solo se procesan si son cédulas, ya se manejó arriba)
+    if (isAuthorizedGroup) {
+      console.log(`📱 Mensaje de grupo autorizado ignorado (no es cédula): ${messageText}`);
+      return res.status(200).json({ status: 'ok', message: 'Group message processed' });
     }
 
     // Convertir mensajes de WHP a formato OpenAI
