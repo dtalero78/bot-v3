@@ -227,6 +227,91 @@ async function consultarCita(numeroDocumento) {
   }
 }
 
+// Consultar estado completo del paciente (HistoriaClinica + FORMULARIO)
+async function consultarEstadoPaciente(numeroDocumento) {
+  try {
+    // 1. Buscar en HistoriaClinica
+    const historiaResponse = await axios.get(`${WIX_BACKEND_URL}/_functions/historiaClinicaPorNumeroId`, {
+      params: {
+        numeroId: numeroDocumento
+      }
+    });
+
+    if (!historiaResponse.data || !historiaResponse.data.data) {
+      return { success: false, message: 'No se encontró información para ese número de documento' };
+    }
+
+    const paciente = historiaResponse.data.data;
+    const historiaId = paciente._id;
+    const nombre = `${paciente.primerNombre || ''} ${paciente.primerApellido || ''}`.trim();
+    const fechaAtencion = paciente.fechaAtencion ? new Date(paciente.fechaAtencion) : null;
+    const fechaConsulta = paciente.fechaConsulta ? new Date(paciente.fechaConsulta) : null;
+    const ahora = new Date();
+
+    // 2. Buscar en FORMULARIO usando el _id de HistoriaClinica
+    let tieneFormulario = false;
+    try {
+      const formularioResponse = await axios.get(`${WIX_BACKEND_URL}/_functions/obtenerFormularioPorIdGeneral`, {
+        params: {
+          idGeneral: historiaId
+        }
+      });
+      tieneFormulario = formularioResponse.data?.success === true;
+    } catch (error) {
+      console.log(`ℹ️ No se encontró formulario para ${numeroDocumento}`);
+      tieneFormulario = false;
+    }
+
+    // 3. Evaluar condiciones (en zona horaria de Colombia)
+    let estado = '';
+    let estadoDetalle = '';
+
+    // Condición 1: Si tiene fechaConsulta que ya pasó
+    if (fechaConsulta && fechaConsulta < ahora) {
+      estado = '✅ Ya está listo';
+      estadoDetalle = 'consulta_realizada';
+    }
+    // Condición 2: Si tiene fechaConsulta pero NO tiene formulario
+    else if (fechaConsulta && !tieneFormulario) {
+      estado = '⚠️ Ya tuvo consulta pero le falta terminar el link';
+      estadoDetalle = 'falta_formulario';
+    }
+    // Condición 3: Si tiene fechaAtencion que ya pasó, NO tiene fechaConsulta y NO tiene formulario
+    else if (fechaAtencion && fechaAtencion < ahora && !fechaConsulta && !tieneFormulario) {
+      estado = '❌ No realizó la consulta, ni diligenció link';
+      estadoDetalle = 'no_realizo_consulta';
+    }
+    // Otros casos (cita programada pendiente, etc.)
+    else if (fechaAtencion && fechaAtencion >= ahora) {
+      // Formatear fecha para mostrar
+      const dia = fechaAtencion.toLocaleDateString('es-CO', { day: 'numeric', timeZone: 'America/Bogota' });
+      const mes = fechaAtencion.toLocaleDateString('es-CO', { month: 'short', timeZone: 'America/Bogota' });
+      const año = fechaAtencion.toLocaleDateString('es-CO', { year: 'numeric', timeZone: 'America/Bogota' });
+      const hora = fechaAtencion.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', hour12: false, timeZone: 'America/Bogota' });
+
+      estado = `📅 Cita programada: ${dia} ${mes} ${año} ${hora}`;
+      estadoDetalle = 'cita_programada';
+    } else {
+      estado = 'ℹ️ Estado no determinado';
+      estadoDetalle = 'indeterminado';
+    }
+
+    return {
+      success: true,
+      nombre,
+      estado,
+      estadoDetalle,
+      tieneFormulario,
+      fechaAtencion,
+      fechaConsulta
+    };
+
+  } catch (error) {
+    console.error('Error consultando estado del paciente:', error.response?.data || error.message);
+    return { success: false, message: 'Error al consultar el estado del paciente' };
+  }
+}
+
 // Marcar como pagado en Wix y obtener _id del item
 async function marcarPagado(cedula) {
   try {
@@ -370,8 +455,23 @@ app.post('/webhook', async (req, res) => {
     // IMPORTANTE: Esta verificación debe ir ANTES de verificar stopBot para que
     // funcione en grupos donde los usuarios pueden tener stopBot=true
     if (esCedula(messageText)) {
-      console.log(`🆔 Detectada cédula: ${messageText}. Consultando cita...`);
+      console.log(`🆔 Detectada cédula: ${messageText}. Consultando información...`);
 
+      // Si es del grupo autorizado, usar consulta completa (HistoriaClinica + FORMULARIO)
+      if (isAuthorizedGroup) {
+        const estadoPaciente = await consultarEstadoPaciente(messageText);
+
+        if (estadoPaciente.success) {
+          const respuesta = `${estadoPaciente.nombre}\n${estadoPaciente.estado}`;
+          await sendWhatsAppMessage(chatId, respuesta);
+          return res.status(200).json({ status: 'ok', message: 'Patient status sent to group' });
+        } else {
+          await sendWhatsAppMessage(chatId, `❌ No encontré información con el documento ${messageText}`);
+          return res.status(200).json({ status: 'ok', message: 'Patient not found' });
+        }
+      }
+
+      // Si es mensaje directo, usar consulta simple (solo fecha de cita)
       const citaInfo = await consultarCita(messageText);
 
       if (citaInfo.success) {
@@ -399,48 +499,28 @@ app.post('/webhook', async (req, res) => {
         });
 
         const respuesta = `${citaInfo.paciente.nombre} - ${dia} ${mes} ${año} ${hora}`;
+        await sendWhatsAppMessage(from, respuesta);
 
-        // Si es un mensaje de grupo, responder al grupo; si no, responder al usuario
-        const destinatario = isAuthorizedGroup ? chatId : from;
-        await sendWhatsAppMessage(destinatario, respuesta);
+        // Verificar si la fecha ya pasó
+        const fechaPasada = fechaAtencion < ahora;
 
-        // Solo guardar en historial si es mensaje directo (no de grupo)
-        if (!isAuthorizedGroup) {
-          // Verificar si la fecha ya pasó
-          const fechaPasada = fechaAtencion < ahora;
-
-          // Guardar en historial
-          const conversationHistory = [
-            { role: 'user', content: messageText },
-            { role: 'assistant', content: respuesta }
-          ];
-          await saveConversationToDB(from, conversationHistory, fechaPasada, message.from_name || '');
-        }
+        // Guardar en historial
+        const conversationHistory = [
+          { role: 'user', content: messageText },
+          { role: 'assistant', content: respuesta }
+        ];
+        await saveConversationToDB(from, conversationHistory, fechaPasada, message.from_name || '');
 
         return res.status(200).json({ status: 'ok', message: 'Appointment info sent' });
       } else {
-        // Si no se encuentra la cita
-        let respuesta;
+        const respuesta = `❌ No encontré una cita programada con el documento ${messageText}.\n\n¿Deseas agendar una cita nueva?`;
+        await sendWhatsAppMessage(from, respuesta);
 
-        if (isAuthorizedGroup) {
-          // En grupo, respuesta más corta
-          respuesta = `❌ No encontré una cita programada con el documento ${messageText}`;
-        } else {
-          // En mensaje directo, respuesta con opción de agendar
-          respuesta = `❌ No encontré una cita programada con el documento ${messageText}.\n\n¿Deseas agendar una cita nueva?`;
-        }
-
-        const destinatario = isAuthorizedGroup ? chatId : from;
-        await sendWhatsAppMessage(destinatario, respuesta);
-
-        // Solo guardar en historial si es mensaje directo (no de grupo)
-        if (!isAuthorizedGroup) {
-          const conversationHistory = [
-            { role: 'user', content: messageText },
-            { role: 'assistant', content: respuesta }
-          ];
-          await saveConversationToDB(from, conversationHistory, false, message.from_name || '');
-        }
+        const conversationHistory = [
+          { role: 'user', content: messageText },
+          { role: 'assistant', content: respuesta }
+        ];
+        await saveConversationToDB(from, conversationHistory, false, message.from_name || '');
 
         return res.status(200).json({ status: 'ok', message: 'No appointment found' });
       }
