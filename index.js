@@ -366,18 +366,9 @@ app.post('/webhook', async (req, res) => {
       return res.status(200).json({ status: 'ok', message: 'Message from bot ignored' });
     }
 
-    // 🛑 OBTENER CONVERSACIÓN DESDE LA BASE DE DATOS
-    const conversationData = await getConversationFromDB(from);
-
-    if (conversationData.stopBot) {
-      console.log(`⛔ Bot detenido para ${from}. No se procesará el mensaje.`);
-      return res.status(200).json({
-        status: 'ok',
-        message: 'Bot stopped for this user'
-      });
-    }
-
     // 🔍 VERIFICAR SI EL USUARIO ENVIÓ UNA CÉDULA PARA CONSULTAR SU CITA
+    // IMPORTANTE: Esta verificación debe ir ANTES de verificar stopBot para que
+    // funcione en grupos donde los usuarios pueden tener stopBot=true
     if (esCedula(messageText)) {
       console.log(`🆔 Detectada cédula: ${messageText}. Consultando cita...`);
 
@@ -460,6 +451,18 @@ app.post('/webhook', async (req, res) => {
     if (isAuthorizedGroup) {
       console.log(`📱 Mensaje de grupo autorizado ignorado (no es cédula): ${messageText}`);
       return res.status(200).json({ status: 'ok', message: 'Group message processed' });
+    }
+
+    // 🛑 OBTENER CONVERSACIÓN DESDE LA BASE DE DATOS Y VERIFICAR stopBot
+    // (Esta verificación va después de cédulas para permitir consultas en grupos)
+    const conversationData = await getConversationFromDB(from);
+
+    if (conversationData.stopBot) {
+      console.log(`⛔ Bot detenido para ${from}. No se procesará el mensaje.`);
+      return res.status(200).json({
+        status: 'ok',
+        message: 'Bot stopped for this user'
+      });
     }
 
     // Convertir mensajes de WHP a formato OpenAI
