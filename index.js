@@ -244,6 +244,7 @@ async function consultarEstadoPaciente(numeroDocumento) {
     const paciente = historiaResponse.data.data;
     const historiaId = paciente._id;
     const nombre = `${paciente.primerNombre || ''} ${paciente.primerApellido || ''}`.trim();
+    const ciudad = paciente.ciudad || '';
     const fechaAtencion = paciente.fechaAtencion ? new Date(paciente.fechaAtencion) : null;
     const fechaConsulta = paciente.fechaConsulta ? new Date(paciente.fechaConsulta) : null;
     const ahora = new Date();
@@ -299,6 +300,7 @@ async function consultarEstadoPaciente(numeroDocumento) {
     return {
       success: true,
       nombre,
+      ciudad,
       estado,
       estadoDetalle,
       tieneFormulario,
@@ -464,7 +466,7 @@ app.post('/webhook', async (req, res) => {
         const estadoPaciente = await consultarEstadoPaciente(messageText);
 
         if (estadoPaciente.success) {
-          const respuesta = `${estadoPaciente.nombre}\n${estadoPaciente.estado}`;
+          const respuesta = `${estadoPaciente.nombre} - ${estadoPaciente.ciudad}\n${estadoPaciente.estado}`;
           await sendWhatsAppMessage(chatId, respuesta);
           return res.status(200).json({ status: 'ok', message: 'Patient status sent to group' });
         } else {
