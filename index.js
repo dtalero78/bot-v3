@@ -411,9 +411,9 @@ app.post('/webhook', async (req, res) => {
     console.log(`🔍 Debug: from="${from}", ADMIN_NUMBER="${ADMIN_NUMBER}", from_me=${message.from_me}`);
     console.log(`🔍 Debug: chatId="${chatId}"`);
 
-    // 👨‍💼 VERIFICAR SI EL MENSAJE ES DEL ADMIN (exactamente como el ejemplo)
-    if (from === ADMIN_NUMBER && message.from_me) {
-      console.log('📨 Mensaje del administrador detectado');
+    // 👨‍💼 VERIFICAR SI EL MENSAJE ES DEL ADMIN (solo en chats individuales, no en grupos)
+    if (from === ADMIN_NUMBER && message.from_me && !isGroupMessage) {
+      console.log('📨 Mensaje del administrador detectado (chat individual)');
 
       // Extraer el userId del chat_id (remover @s.whatsapp.net)
       const userId = chatId ? chatId.split('@')[0].trim() : null;
@@ -446,8 +446,9 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
-    // Ignorar otros mensajes enviados por el bot (que no son del admin)
-    if (message.from_me) {
+    // Ignorar otros mensajes enviados por el bot (que no son del admin en grupo)
+    // Permitir que el admin escriba cédulas en grupos
+    if (message.from_me && !(isGroupMessage && from === ADMIN_NUMBER)) {
       return res.status(200).json({ status: 'ok', message: 'Message from bot ignored' });
     }
 
