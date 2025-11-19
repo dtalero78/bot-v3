@@ -685,7 +685,7 @@ app.post('/webhook-pagos', async (req, res) => {
         }
 
         // 3. Comprobante válido - pedir documento
-        const mensaje = `✅ *Comprobante de pago recibido*\n\nPara completar el proceso y generar tu certificado, escribe tu *número de documento* (solo números, sin puntos).\n\nEjemplo: 1234567890`;
+        const mensaje = `✅ *Comprobante de pago recibido*\n\nEscribe tu *número de documento* (solo números, sin puntos).\n\nEjemplo: 1234567890`;
         await sendWhatsAppMessage(from, mensaje);
 
         // Guardar estado en memoria
