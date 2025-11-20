@@ -448,21 +448,19 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
-    // Ignorar otros mensajes enviados por el bot (que no son del admin en grupo)
-    // Permitir que el admin escriba cédulas en grupos
-    if (message.from_me && !(isGroupMessage && from === ADMIN_NUMBER)) {
+    // Ignorar otros mensajes enviados por el bot
+    if (message.from_me) {
       return res.status(200).json({ status: 'ok', message: 'Message from bot ignored' });
     }
 
     // 🔍 VERIFICAR SI EL USUARIO ENVIÓ UNA CÉDULA PARA CONSULTAR SU CITA
     // IMPORTANTE: Esta verificación debe ir ANTES de verificar stopBot para que
     // funcione en grupos donde los usuarios pueden tener stopBot=true
-    // También permite consultas del administrador en el grupo
     if (esCedula(messageText)) {
       console.log(`🆔 Detectada cédula: ${messageText}. Consultando información...`);
 
-      // Si es del grupo autorizado O el administrador consulta en el grupo
-      if (isAuthorizedGroup || (isGroupMessage && from === ADMIN_NUMBER)) {
+      // Si es del grupo autorizado, usar consulta completa (HistoriaClinica + FORMULARIO)
+      if (isAuthorizedGroup) {
         const estadoPaciente = await consultarEstadoPaciente(messageText);
 
         if (estadoPaciente.success) {
