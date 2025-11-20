@@ -252,7 +252,7 @@ async function consultarEstadoPaciente(numeroDocumento) {
     // 2. Buscar en FORMULARIO usando el _id de HistoriaClinica
     let tieneFormulario = false;
     try {
-      const formularioResponse = await axios.get(`${WIX_BACKEND_URL}/_functions/obtenerFormularioPorIdGeneral`, {
+      const formularioResponse = await axios.get(`${WIX_BACKEND_URL}/_functions/formularioPorIdGeneral`, {
         params: {
           idGeneral: historiaId
         }
