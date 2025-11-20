@@ -473,47 +473,61 @@ app.post('/webhook', async (req, res) => {
         }
       }
 
-      // Si es mensaje directo, usar consulta simple (solo fecha de cita)
-      const citaInfo = await consultarCita(messageText);
+      // Si es mensaje directo, usar consulta completa (HistoriaClinica + FORMULARIO)
+      const estadoPaciente = await consultarEstadoPaciente(messageText);
 
-      if (citaInfo.success) {
-        const fechaAtencion = new Date(citaInfo.paciente.fechaAtencion);
+      if (estadoPaciente.success) {
         const ahora = new Date();
+        const fechaConsulta = estadoPaciente.fechaConsulta;
+        const fechaAtencion = estadoPaciente.fechaAtencion;
+        const tieneFormulario = estadoPaciente.tieneFormulario;
 
-        // Formato: 12 Nov 2025 9:00
-        const dia = fechaAtencion.toLocaleDateString('es-CO', {
-          day: 'numeric',
-          timeZone: 'America/Bogota'
-        });
-        const mes = fechaAtencion.toLocaleDateString('es-CO', {
-          month: 'short',
-          timeZone: 'America/Bogota'
-        });
-        const año = fechaAtencion.toLocaleDateString('es-CO', {
-          year: 'numeric',
-          timeZone: 'America/Bogota'
-        });
-        const hora = fechaAtencion.toLocaleTimeString('es-CO', {
-          hour: 'numeric',
-          minute: '2-digit',
-          hour12: false,
-          timeZone: 'America/Bogota'
-        });
+        let respuesta = '';
+        let debeDetenerBot = false;
 
-        const respuesta = `${citaInfo.paciente.nombre} - ${dia} ${mes} ${año} ${hora}`;
+        // Condición 1: fechaConsulta pasó + tiene FORMULARIO
+        if (fechaConsulta && fechaConsulta < ahora && tieneFormulario) {
+          respuesta = '✅ ¡Tu certificado ya está listo!';
+          debeDetenerBot = true;
+        }
+        // Condición 2: fechaConsulta pasó + NO tiene FORMULARIO
+        else if (fechaConsulta && fechaConsulta < ahora && !tieneFormulario) {
+          respuesta = 'Te falta terminar el formulario. Continúa en este link:\n\nhttps://www.bsl.com.co/desbloqueo';
+        }
+        // Condición 3: fechaAtencion NO ha pasado + tiene FORMULARIO
+        else if (fechaAtencion && fechaAtencion >= ahora && tieneFormulario) {
+          const dia = fechaAtencion.toLocaleDateString('es-CO', { day: 'numeric', timeZone: 'America/Bogota' });
+          const mes = fechaAtencion.toLocaleDateString('es-CO', { month: 'short', timeZone: 'America/Bogota' });
+          const año = fechaAtencion.toLocaleDateString('es-CO', { year: 'numeric', timeZone: 'America/Bogota' });
+          const hora = fechaAtencion.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', hour12: false, timeZone: 'America/Bogota' });
+
+          respuesta = `${estadoPaciente.nombre} - ${dia} ${mes} ${año} ${hora}`;
+        }
+        // Condición 4: fechaAtencion NO ha pasado + NO tiene FORMULARIO
+        else if (fechaAtencion && fechaAtencion >= ahora && !tieneFormulario) {
+          respuesta = 'Te falta terminar el formulario. Continúa en este link:\n\nhttps://www.bsl.com.co/desbloqueo';
+        }
+        // Otros casos
+        else {
+          respuesta = '❌ No encontré información de tu cita. Por favor contacta a un asesor.';
+        }
+
         await sendWhatsAppMessage(from, respuesta);
 
-        // Verificar si la fecha ya pasó
-        const fechaPasada = fechaAtencion < ahora;
+        // Si debe detener el bot, ejecutar updateStopBotOnly
+        if (debeDetenerBot) {
+          await updateStopBotOnly(from, true);
+          console.log(`🛑 Bot detenido para ${from} - certificado listo`);
+        }
 
         // Guardar en historial
         const conversationHistory = [
           { role: 'user', content: messageText },
           { role: 'assistant', content: respuesta }
         ];
-        await saveConversationToDB(from, conversationHistory, fechaPasada, message.from_name || '');
+        await saveConversationToDB(from, conversationHistory, debeDetenerBot, message.from_name || '');
 
-        return res.status(200).json({ status: 'ok', message: 'Appointment info sent' });
+        return res.status(200).json({ status: 'ok', message: 'Patient info sent' });
       } else {
         const respuesta = `❌ No encontré una cita programada con el documento ${messageText}.\n\n¿Deseas agendar una cita nueva?`;
         await sendWhatsAppMessage(from, respuesta);
