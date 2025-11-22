@@ -572,6 +572,26 @@ Por favor envía el comprobante de pago cuando completes la transferencia.`;
         else if (fechaAtencion && fechaAtencion >= ahora && !tieneFormulario) {
           respuesta = 'Te falta terminar el formulario. Continúa en este link:\n\nhttps://www.bsl.com.co/desbloqueo';
         }
+        // Condición 5: fechaAtencion pasó + NO ha sido atendido (fechaConsulta null)
+        else if (fechaAtencion && fechaAtencion < ahora && !fechaConsulta) {
+          try {
+            const dia = fechaAtencion.toLocaleDateString('es-CO', { day: 'numeric', timeZone: 'America/Bogota' });
+            const mes = fechaAtencion.toLocaleDateString('es-CO', { month: 'short', timeZone: 'America/Bogota' });
+            const año = fechaAtencion.toLocaleDateString('es-CO', { year: 'numeric', timeZone: 'America/Bogota' });
+            const hora = fechaAtencion.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', hour12: false, timeZone: 'America/Bogota' });
+
+            respuesta = `Tu cita estaba programada para el ${dia} ${mes} ${año} ${hora}. Un asesor se comunicará contigo para ayudarte.`;
+          } catch (e) {
+            // Fallback sin timezone si hay error
+            const dia = fechaAtencion.getDate();
+            const mes = fechaAtencion.toLocaleDateString('es-CO', { month: 'short' });
+            const año = fechaAtencion.getFullYear();
+            const hora = fechaAtencion.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', hour12: false });
+
+            respuesta = `Tu cita estaba programada para el ${dia} ${mes} ${año} ${hora}. Un asesor se comunicará contigo para ayudarte.`;
+          }
+          debeDetenerBot = true;
+        }
         // Otros casos
         else {
           respuesta = '❌ No encontré información de tu cita. Por favor contacta a un asesor.';
