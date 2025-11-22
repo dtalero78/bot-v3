@@ -266,11 +266,13 @@ async function consultarEstadoPaciente(numeroDocumento) {
     }
 
     // 3. Evaluar condiciones (en zona horaria de Colombia)
+    console.log(`🔍 DEBUG Antes de evaluar condiciones - fechaAtencion:`, fechaAtencion, `fechaConsulta:`, fechaConsulta);
     let estado = '';
     let estadoDetalle = '';
 
     // Condición 1: Si tiene fechaConsulta que ya pasó
     if (fechaConsulta && fechaConsulta < ahora) {
+      console.log(`🔍 DEBUG Entró en condición 1`);
       estado = '✅ Ya está listo';
       estadoDetalle = 'consulta_realizada';
     }
@@ -299,6 +301,7 @@ async function consultarEstadoPaciente(numeroDocumento) {
       estadoDetalle = 'indeterminado';
     }
 
+    console.log(`🔍 DEBUG Antes del return - success: true, nombre: ${nombre}, tieneFormulario: ${tieneFormulario}`);
     return {
       success: true,
       nombre,
@@ -311,7 +314,8 @@ async function consultarEstadoPaciente(numeroDocumento) {
     };
 
   } catch (error) {
-    console.error('Error consultando estado del paciente:', error.response?.data || error.message);
+    console.error('❌ ERROR en consultarEstadoPaciente:', error.response?.data || error.message);
+    console.error('❌ ERROR stack:', error.stack);
     return { success: false, message: 'Error al consultar el estado del paciente' };
   }
 }
