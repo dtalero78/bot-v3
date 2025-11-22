@@ -257,9 +257,11 @@ async function consultarEstadoPaciente(numeroDocumento) {
           idGeneral: historiaId
         }
       });
+      console.log(`🔍 DEBUG formulario response para ${numeroDocumento}:`, JSON.stringify(formularioResponse.data));
       tieneFormulario = formularioResponse.data?.success === true;
+      console.log(`🔍 DEBUG tieneFormulario = ${tieneFormulario}`);
     } catch (error) {
-      console.log(`ℹ️ No se encontró formulario para ${numeroDocumento}`);
+      console.log(`ℹ️ No se encontró formulario para ${numeroDocumento}`, error.message);
       tieneFormulario = false;
     }
 
