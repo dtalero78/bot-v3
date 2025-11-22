@@ -437,6 +437,27 @@ app.post('/webhook', async (req, res) => {
         console.log(`🎯 Comando detectado: reactivar bot para ${userId}`);
         await updateStopBotOnly(userId, false);
         console.log(`✅ Bot reactivado para ${userId} por el administrador`);
+      } else if (messageText === 'Revisa que todo esté en orden') {
+        console.log(`🎯 Comando detectado: enviar números de cuenta para ${userId}`);
+        const numerosCC = `💳 *Medios de pago BSL*
+
+📌 *Bancolombia*
+Ahorros: 44291192456
+Cédula: 79981585
+
+📌 *Daviplata*
+3014400818 (Mar Rea)
+
+📌 *Nequi*
+3008021701 (Dan Tal)
+
+📌 *Transfiya*
+También disponible
+
+Por favor envía el comprobante de pago cuando completes la transferencia.`;
+
+        await sendWhatsAppMessage(userId, numerosCC);
+        console.log(`✅ Números de cuenta enviados a ${userId}`);
       } else {
         console.log(`⚠️ Mensaje del admin no coincide con comandos conocidos`);
       }
