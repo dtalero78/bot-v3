@@ -517,6 +517,12 @@ Por favor envía el comprobante de pago cuando completes la transferencia.`;
         const fechaAtencion = estadoPaciente.fechaAtencion;
         const tieneFormulario = estadoPaciente.tieneFormulario;
 
+        console.log(`🔍 DEBUG ahora:`, ahora);
+        console.log(`🔍 DEBUG fechaConsulta:`, fechaConsulta);
+        console.log(`🔍 DEBUG fechaAtencion:`, fechaAtencion);
+        console.log(`🔍 DEBUG tieneFormulario:`, tieneFormulario);
+        console.log(`🔍 DEBUG fechaAtencion >= ahora:`, fechaAtencion >= ahora);
+
         let respuesta = '';
         let debeDetenerBot = false;
 
