@@ -289,12 +289,22 @@ async function consultarEstadoPaciente(numeroDocumento) {
     // Otros casos (cita programada pendiente, etc.)
     else if (fechaAtencion && fechaAtencion >= ahora) {
       // Formatear fecha para mostrar
-      const dia = fechaAtencion.toLocaleDateString('es-CO', { day: 'numeric', timeZone: 'America/Bogota' });
-      const mes = fechaAtencion.toLocaleDateString('es-CO', { month: 'short', timeZone: 'America/Bogota' });
-      const año = fechaAtencion.toLocaleDateString('es-CO', { year: 'numeric', timeZone: 'America/Bogota' });
-      const hora = fechaAtencion.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', hour12: false, timeZone: 'America/Bogota' });
+      try {
+        const dia = fechaAtencion.toLocaleDateString('es-CO', { day: 'numeric', timeZone: 'America/Bogota' });
+        const mes = fechaAtencion.toLocaleDateString('es-CO', { month: 'short', timeZone: 'America/Bogota' });
+        const año = fechaAtencion.toLocaleDateString('es-CO', { year: 'numeric', timeZone: 'America/Bogota' });
+        const hora = fechaAtencion.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', hour12: false, timeZone: 'America/Bogota' });
 
-      estado = `📅 Cita programada: ${dia} ${mes} ${año} ${hora}`;
+        estado = `📅 Cita programada: ${dia} ${mes} ${año} ${hora}`;
+      } catch (e) {
+        // Fallback sin timezone si hay error
+        const dia = fechaAtencion.getDate();
+        const mes = fechaAtencion.toLocaleDateString('es-CO', { month: 'short' });
+        const año = fechaAtencion.getFullYear();
+        const hora = fechaAtencion.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', hour12: false });
+
+        estado = `📅 Cita programada: ${dia} ${mes} ${año} ${hora}`;
+      }
       estadoDetalle = 'cita_programada';
     } else {
       estado = 'ℹ️ Estado no determinado';
@@ -541,12 +551,22 @@ Por favor envía el comprobante de pago cuando completes la transferencia.`;
         }
         // Condición 3: fechaAtencion NO ha pasado + tiene FORMULARIO
         else if (fechaAtencion && fechaAtencion >= ahora && tieneFormulario) {
-          const dia = fechaAtencion.toLocaleDateString('es-CO', { day: 'numeric', timeZone: 'America/Bogota' });
-          const mes = fechaAtencion.toLocaleDateString('es-CO', { month: 'short', timeZone: 'America/Bogota' });
-          const año = fechaAtencion.toLocaleDateString('es-CO', { year: 'numeric', timeZone: 'America/Bogota' });
-          const hora = fechaAtencion.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', hour12: false, timeZone: 'America/Bogota' });
+          try {
+            const dia = fechaAtencion.toLocaleDateString('es-CO', { day: 'numeric', timeZone: 'America/Bogota' });
+            const mes = fechaAtencion.toLocaleDateString('es-CO', { month: 'short', timeZone: 'America/Bogota' });
+            const año = fechaAtencion.toLocaleDateString('es-CO', { year: 'numeric', timeZone: 'America/Bogota' });
+            const hora = fechaAtencion.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', hour12: false, timeZone: 'America/Bogota' });
 
-          respuesta = `${estadoPaciente.nombre} - ${dia} ${mes} ${año} ${hora}`;
+            respuesta = `${estadoPaciente.nombre} - ${dia} ${mes} ${año} ${hora}`;
+          } catch (e) {
+            // Fallback sin timezone si hay error
+            const dia = fechaAtencion.getDate();
+            const mes = fechaAtencion.toLocaleDateString('es-CO', { month: 'short' });
+            const año = fechaAtencion.getFullYear();
+            const hora = fechaAtencion.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', hour12: false });
+
+            respuesta = `${estadoPaciente.nombre} - ${dia} ${mes} ${año} ${hora}`;
+          }
         }
         // Condición 4: fechaAtencion NO ha pasado + NO tiene FORMULARIO
         else if (fechaAtencion && fechaAtencion >= ahora && !tieneFormulario) {
