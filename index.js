@@ -286,7 +286,12 @@ async function consultarEstadoPaciente(numeroDocumento) {
       estado = '❌ No realizó la consulta, ni diligenció link';
       estadoDetalle = 'no_realizo_consulta';
     }
-    // Otros casos (cita programada pendiente, etc.)
+    // Condición 4: Si tiene fechaAtencion que ya pasó, NO tiene fechaConsulta pero SÍ tiene formulario
+    else if (fechaAtencion && fechaAtencion < ahora && !fechaConsulta && tieneFormulario) {
+      estado = '⚠️ Realizó link pero no asistió a consulta';
+      estadoDetalle = 'no_asistio_consulta';
+    }
+    // Condición 5: Cita programada pendiente (fechaAtencion >= ahora)
     else if (fechaAtencion && fechaAtencion >= ahora) {
       // Formatear fecha para mostrar
       try {
@@ -306,7 +311,9 @@ async function consultarEstadoPaciente(numeroDocumento) {
         estado = `📅 Cita programada: ${dia} ${mes} ${año} ${hora}`;
       }
       estadoDetalle = 'cita_programada';
-    } else {
+    }
+    // Condición 6: Otros casos
+    else {
       estado = 'ℹ️ Estado no determinado';
       estadoDetalle = 'indeterminado';
     }
