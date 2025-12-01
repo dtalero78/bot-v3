@@ -90,6 +90,56 @@ export async function consultarPorDocumento(numeroId) {
     }
 }
 
+// FUNCIÓN PARA CONSULTAR POR CELULAR (BOT DIGITALOCEAN)
+export async function consultarPorCelular(celular) {
+    try {
+        // Limpiar el número: quitar código de país y caracteres no numéricos
+        const celularLimpio = celular.replace(/\D/g, '').replace(/^57/, '');
+
+        const result = await wixData.query("HistoriaClinica")
+            .eq("celular", celularLimpio)
+            .descending("fechaAtencion") // Obtener el más reciente primero
+            .find();
+
+        if (result.items.length === 0) {
+            return { success: false, message: "No se encontró paciente con ese celular" };
+        }
+
+        // Retornar el registro más reciente
+        const item = result.items[0];
+        return {
+            success: true,
+            _id: item._id,
+            numeroId: item.numeroId,
+            primerNombre: item.primerNombre,
+            segundoNombre: item.segundoNombre,
+            primerApellido: item.primerApellido,
+            segundoApellido: item.segundoApellido,
+            celular: item.celular,
+            fechaConsulta: item.fechaConsulta ? item.fechaConsulta.toISOString() : null,
+            fechaAtencion: item.fechaAtencion ? item.fechaAtencion.toISOString() : null,
+            pvEstado: item.pvEstado,
+            atendido: item.atendido,
+            empresa: item.empresa,
+            codEmpresa: item.codEmpresa
+        };
+    } catch (error) {
+        console.error("Error consultando información por celular:", error);
+        return { success: false, error: error.message };
+    }
+}
+
+// FUNCIÓN PARA CREAR NUEVA HISTORIA CLÍNICA (ORDEN)
+export async function crearHistoriaClinica(datos) {
+    try {
+        const result = await wixData.insert("HistoriaClinica", datos);
+        return { success: true, item: result };
+    } catch (error) {
+        console.error("Error creando historia clínica:", error);
+        return { success: false, error: error.message };
+    }
+}
+
 // FUNCIÓN PARA ACTUALIZAR HISTORIA CLÍNICA
 export async function actualizarHistoriaClinica(_id, datos) {
     try {
@@ -338,22 +388,49 @@ export async function buscarPacientesMediData(termino) {
 
         let result;
 
-        // Si el término es numérico, buscar por numeroId o celular
-        if (/^\d+$/.test(termino)) {
-            // Buscar por numeroId
-            const resultNumeroId = await wixData.query("HistoriaClinica")
+        // Detectar si parece un documento (números puros, o números con guión/letras como 1234789639-P)
+        const esDocumento = /^\d+(-[A-Za-z0-9]+)?$/.test(termino) || /^\d+$/.test(termino);
+        const esSoloNumeros = /^\d+$/.test(termino);
+
+        if (esDocumento) {
+            // Buscar por numeroId (coincidencia exacta)
+            const resultNumeroIdExacto = await wixData.query("HistoriaClinica")
                 .eq("numeroId", termino)
                 .limit(50)
                 .find();
 
-            // Buscar por celular
-            const resultCelular = await wixData.query("HistoriaClinica")
-                .eq("celular", termino)
+            // También buscar si el término está contenido en numeroId (para IDs alfanuméricos)
+            const resultNumeroIdContains = await wixData.query("HistoriaClinica")
+                .contains("numeroId", termino)
                 .limit(50)
                 .find();
 
+            // Si tiene guión, también buscar por la parte numérica antes del guión
+            let resultNumeroIdParcial = { items: [] };
+            if (termino.includes('-')) {
+                const parteNumerica = termino.split('-')[0];
+                resultNumeroIdParcial = await wixData.query("HistoriaClinica")
+                    .startsWith("numeroId", parteNumerica)
+                    .limit(50)
+                    .find();
+            }
+
+            // Buscar por celular (solo si es puramente numérico)
+            let resultCelular = { items: [] };
+            if (esSoloNumeros) {
+                resultCelular = await wixData.query("HistoriaClinica")
+                    .eq("celular", termino)
+                    .limit(50)
+                    .find();
+            }
+
             // Combinar resultados y eliminar duplicados
-            const combinedItems = [...resultNumeroId.items, ...resultCelular.items];
+            const combinedItems = [
+                ...resultNumeroIdExacto.items,
+                ...resultNumeroIdContains.items,
+                ...resultNumeroIdParcial.items,
+                ...resultCelular.items
+            ];
             const uniqueItems = Array.from(new Map(combinedItems.map(item => [item._id, item])).values());
 
             result = {
@@ -361,7 +438,7 @@ export async function buscarPacientesMediData(termino) {
                 totalCount: uniqueItems.length
             };
         } else {
-            // Si es texto, buscar por apellidos
+            // Si es texto puro, buscar por apellidos
             const resultPrimerApellido = await wixData.query("HistoriaClinica")
                 .contains("primerApellido", termino.toUpperCase())
                 .limit(50)
