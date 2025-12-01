@@ -198,6 +198,38 @@ async function clasificarImagen(base64Image, mimeType) {
   }
 }
 
+// Buscar paciente por número de celular (WhatsApp)
+async function buscarPacientePorCelular(celular) {
+  try {
+    // Limpiar el número: quitar código de país 57 y caracteres no numéricos
+    const celularLimpio = celular.replace(/\D/g, '').replace(/^57/, '');
+
+    const response = await axios.get(`${WIX_BACKEND_URL}/_functions/historiaClinicaPorCelular`, {
+      params: {
+        celular: celularLimpio
+      }
+    });
+
+    if (response.data && response.data.success) {
+      return {
+        success: true,
+        numeroId: response.data.numeroId,
+        nombre: `${response.data.primerNombre || ''} ${response.data.primerApellido || ''}`.trim(),
+        celular: response.data.celular,
+        fechaAtencion: response.data.fechaAtencion,
+        fechaConsulta: response.data.fechaConsulta,
+        empresa: response.data.empresa,
+        _id: response.data._id
+      };
+    } else {
+      return { success: false, message: 'No se encontró paciente con ese celular' };
+    }
+  } catch (error) {
+    console.error('Error buscando paciente por celular:', error.response?.data || error.message);
+    return { success: false, message: 'Error al buscar paciente por celular' };
+  }
+}
+
 // Consultar cita en HistoriaClinica por número de documento
 async function consultarCita(numeroDocumento) {
   try {
@@ -366,10 +398,15 @@ async function marcarPagado(cedula) {
 // ========================================
 
 // Función para obtener respuesta de OpenAI
-async function getAIResponse(userMessage, conversationHistory = []) {
+async function getAIResponse(userMessage, conversationHistory = [], contextoPaciente = '') {
   try {
+    // Agregar contexto del paciente al system prompt si está disponible
+    const systemPromptConContexto = contextoPaciente
+      ? systemPrompt + contextoPaciente
+      : systemPrompt;
+
     const messages = [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content: systemPromptConContexto },
       ...conversationHistory,
       { role: 'user', content: userMessage }
     ];
@@ -644,6 +681,34 @@ Por favor envía el comprobante de pago cuando completes la transferencia.`;
     // Obtener conversación desde la base de datos para procesar con OpenAI
     const conversationData = await getConversationFromDB(from);
 
+    // 🔍 BUSCAR AUTOMÁTICAMENTE AL PACIENTE POR SU NÚMERO DE WHATSAPP
+    // Esto permite saber en qué punto del flujo está sin pedirle la cédula
+    let contextoPaciente = '';
+    const pacientePorCelular = await buscarPacientePorCelular(from);
+
+    if (pacientePorCelular.success && pacientePorCelular.numeroId) {
+      console.log(`🔍 Paciente identificado por celular: ${pacientePorCelular.nombre} (${pacientePorCelular.numeroId})`);
+
+      // Consultar estado completo del paciente
+      const estadoPaciente = await consultarEstadoPaciente(pacientePorCelular.numeroId);
+
+      if (estadoPaciente.success) {
+        // Construir contexto para el AI basado en el estado del paciente
+        contextoPaciente = `\n\n📋 INFORMACIÓN DEL PACIENTE (identificado automáticamente por su celular):
+- Nombre: ${estadoPaciente.nombre}
+- Cédula: ${pacientePorCelular.numeroId}
+- Empresa: ${estadoPaciente.empresa || 'No especificada'}
+- Estado actual: ${estadoPaciente.estado}
+- Tiene formulario diligenciado: ${estadoPaciente.tieneFormulario ? 'Sí' : 'No'}
+
+Usa esta información para dar respuestas personalizadas según en qué punto del flujo se encuentra.`;
+
+        console.log(`📊 Estado del paciente: ${estadoPaciente.estado}`);
+      }
+    } else {
+      console.log(`🔍 No se encontró paciente registrado con celular: ${from}`);
+    }
+
     // Convertir mensajes de WHP a formato OpenAI
     let conversationHistory = conversationData.mensajes.map(msg => ({
       role: msg.from === 'usuario' ? 'user' : 'assistant',
@@ -655,8 +720,8 @@ Por favor envía el comprobante de pago cuando completes la transferencia.`;
       conversationHistory = conversationHistory.slice(-10);
     }
 
-    // Obtener respuesta de AI
-    const aiResponse = await getAIResponse(messageText, conversationHistory);
+    // Obtener respuesta de AI (con contexto del paciente si está disponible)
+    const aiResponse = await getAIResponse(messageText, conversationHistory, contextoPaciente);
 
     // Actualizar historial con el nuevo intercambio
     conversationHistory.push(
