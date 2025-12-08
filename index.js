@@ -176,7 +176,15 @@ async function clasificarImagen(base64Image, mimeType) {
           content: [
             {
               type: 'text',
-              text: 'Analiza esta imagen y responde ÚNICAMENTE con "comprobante_pago" si es un comprobante de pago, transferencia bancaria o recibo de pago. Si no lo es, responde "no_es_comprobante".'
+              text: `Analiza esta imagen y clasifícala. Responde ÚNICAMENTE con una de estas opciones:
+
+1. "comprobante_pago" - Si es un comprobante de pago, transferencia bancaria, recibo de pago, captura de Nequi, Daviplata, Bancolombia, etc.
+
+2. "listado_examenes" - Si es una foto o documento que muestra un listado de exámenes médicos ocupacionales que la empresa le pide al trabajador (puede incluir: examen médico, audiometría, visiometría, optometría, espirometría, laboratorios, perfil lipídico, glicemia, etc.)
+
+3. "otra_imagen" - Si es cualquier otra cosa que no encaja en las categorías anteriores.
+
+Responde solo con una de las tres opciones, sin explicación adicional.`
             },
             {
               type: 'image_url',
@@ -191,7 +199,14 @@ async function clasificarImagen(base64Image, mimeType) {
     });
 
     const resultado = response.choices[0].message.content.trim().toLowerCase();
-    return resultado.includes('comprobante_pago') ? 'comprobante_pago' : 'no_es_comprobante';
+
+    if (resultado.includes('comprobante_pago')) {
+      return 'comprobante_pago';
+    } else if (resultado.includes('listado_examenes')) {
+      return 'listado_examenes';
+    } else {
+      return 'otra_imagen';
+    }
   } catch (error) {
     console.error('Error clasificando imagen:', error);
     return 'error';
@@ -839,18 +854,49 @@ app.post('/webhook-pagos', async (req, res) => {
 
         // 2. Validar con OpenAI Vision
         const clasificacion = await clasificarImagen(base64Image, mimeType);
+        console.log(`🔍 Clasificación de imagen: ${clasificacion}`);
 
-        if (clasificacion !== 'comprobante_pago') {
+        // Caso 1: Listado de exámenes médicos
+        if (clasificacion === 'listado_examenes') {
+          console.log(`📋 Listado de exámenes detectado de ${from}`);
+
+          const mensajeExamenes = `📋 *¡Perfecto! Veo que te pidieron exámenes ocupacionales.*
+
+🩺 *Nuestras opciones:*
+
+*Virtual – $46.000 COP*
+• 100% online desde cualquier lugar
+• Disponible 7am-7pm todos los días
+• Duración: 35 minutos
+• Incluye: Médico, audiometría, optometría
+
+*Presencial – $69.000 COP*
+• Calle 134 No. 7-83, Bogotá
+• Lunes a Viernes 7:30am-4:30pm
+• Sábados 8am-11:30am
+
+📲 *Agenda aquí:* https://www.bsl.com.co/nuevaorden-1
+
+¿Tienes alguna pregunta sobre los exámenes?`;
+
+          await sendWhatsAppMessage(from, mensajeExamenes);
+          return res.status(200).json({ status: 'ok', message: 'Listado de exámenes - información enviada' });
+        }
+
+        // Caso 2: Otra imagen (no es pago ni exámenes)
+        if (clasificacion === 'otra_imagen' || clasificacion === 'error') {
+          console.log(`❓ Imagen no reconocida de ${from} - transfiriendo a asesor`);
+
           const mensaje = `...transfiriendo con asesor`;
           await sendWhatsAppMessage(from, mensaje);
 
           // Marcar stopBot como true para transferir a humano
           await updateStopBotOnly(from, true);
 
-          return res.status(200).json({ status: 'ok', message: 'Imagen no válida - transferido a asesor' });
+          return res.status(200).json({ status: 'ok', message: 'Imagen no reconocida - transferido a asesor' });
         }
 
-        // 3. Comprobante válido - pedir documento
+        // Caso 3: Comprobante de pago válido - pedir documento
         const mensaje = `✅ *Comprobante de pago recibido*\n\nEscribe tu *número de documento* (solo números, sin puntos).\n\nEjemplo: 1234567890`;
         await sendWhatsAppMessage(from, mensaje);
 
