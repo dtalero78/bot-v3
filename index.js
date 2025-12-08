@@ -518,6 +518,10 @@ Por favor envía el comprobante de pago cuando completes la transferencia.`;
 
         await sendWhatsAppMessage(userId, numerosCC);
         console.log(`✅ Números de cuenta enviados a ${userId}`);
+      } else if (messageText.includes('https://www.bsl.com.co/descargar')) {
+        console.log(`🎯 Comando detectado: link de descarga enviado a ${userId}`);
+        await updateStopBotOnly(userId, true);
+        console.log(`🛑 Bot detenido para ${userId} - link de descarga enviado`);
       } else {
         console.log(`⚠️ Mensaje del admin no coincide con comandos conocidos`);
       }
