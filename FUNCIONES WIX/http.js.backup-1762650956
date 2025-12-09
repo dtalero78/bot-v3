@@ -7,13 +7,15 @@ import { twiml, validateRequest } from 'twilio';
 import { fetch } from 'wix-fetch';
 import wixData from 'wix-data';
 import { sendmessage } from 'backend/realtime.jsw';
-import { enviarCertificadosProgramados, barridoYEnvioMensajesConDelay, envioLinkMedicoVirtual, testSincronizarPostgres } from 'backend/BotLinks';
+import { enviarCertificadosProgramados } from 'backend/BotLinks';
+import { barridoYEnvioMensajesConDelay } from 'backend/BotLinks';
+import { envioLinkMedicoVirtual } from 'backend/BotLinks';
 import { actualizarResumenConversacion } from 'backend/exposeDataBase';
 import { obtenerHorasOcupadas } from 'backend/exposeDataBase';
 import { crearRegistroAgente } from 'backend/exposeDataBase';
 import { consultarPorDocumento } from 'backend/exposeDataBase';
 import { guardarMensajeWix } from 'backend/BotGuardarMensajesWix.jsw';
-import { obtenerFormularios, actualizarFormulario, obtenerFormularioPorIdGeneral, crearFormulario, crearHistoriaClinica } from 'backend/exposeDataBase';
+import { obtenerFormularios, actualizarFormulario, obtenerFormularioPorIdGeneral, crearFormulario } from 'backend/exposeDataBase';
 import { obtenerAudiometrias, actualizarAudiometria, crearAudiometria } from 'backend/exposeDataBase';
 import { obtenerVisuales, actualizarVisual, crearVisual } from 'backend/exposeDataBase';
 import { obtenerAdcTests, actualizarAdcTest, crearAdcTest } from 'backend/exposeDataBase';
@@ -1689,60 +1691,6 @@ export function get_historiaClinicaPorNumeroId(request) {
         });
 }
 
-// ENDPOINT PARA BUSCAR HISTORIA CLÍNICA POR CELULAR (BOT DIGITALOCEAN)
-export function get_historiaClinicaPorCelular(request) {
-    console.log("Buscando información de HistoriaClinica por celular");
-
-    const { celular } = request.query;
-
-    if (!celular) {
-        return badRequest({ body: { message: "Falta el parámetro 'celular'" } });
-    }
-
-    // Limpiar el número: quitar código de país y caracteres no numéricos
-    const celularLimpio = celular.replace(/\D/g, '').replace(/^57/, '');
-
-    return wixData.query("HistoriaClinica")
-        .eq("celular", celularLimpio)
-        .descending("fechaAtencion")  // Obtener el más reciente primero
-        .find()
-        .then(result => {
-            if (!result.items || result.items.length === 0) {
-                return ok({
-                    headers: { "Content-Type": "application/json" },
-                    body: { success: false, message: "No se encontró paciente con ese celular" }
-                });
-            }
-
-            // Retornar el más reciente (primero en la lista)
-            const item = result.items[0];
-
-            return ok({
-                headers: { "Content-Type": "application/json" },
-                body: {
-                    success: true,
-                    _id: item._id,
-                    numeroId: item.numeroId,
-                    primerNombre: item.primerNombre,
-                    segundoNombre: item.segundoNombre,
-                    primerApellido: item.primerApellido,
-                    segundoApellido: item.segundoApellido,
-                    celular: item.celular,
-                    fechaConsulta: item.fechaConsulta,
-                    fechaAtencion: item.fechaAtencion,
-                    pvEstado: item.pvEstado,
-                    atendido: item.atendido,
-                    empresa: item.empresa,
-                    codEmpresa: item.codEmpresa
-                }
-            });
-        })
-        .catch(error => {
-            console.error("Error al obtener información por celular:", error);
-            return serverError({ body: { message: "Error al obtener la información" } });
-        });
-}
-
 // ENDPOINT PARA ACTUALIZAR HISTORIA CLÍNICA
 export async function post_actualizarHistoriaClinica(request) {
     try {
@@ -1770,37 +1718,6 @@ export async function post_actualizarHistoriaClinica(request) {
             });
         }
     } catch (error) {
-        return serverError({
-            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-            body: { error: error.message }
-        });
-    }
-}
-
-// ENDPOINT PARA CREAR NUEVA HISTORIA CLÍNICA (ORDEN)
-export async function post_crearHistoriaClinica(request) {
-    try {
-        const body = await request.body.json();
-
-        console.log("📋 Creando nueva Historia Clínica (Orden)");
-        console.log("📦 Datos recibidos:", JSON.stringify(body, null, 2));
-
-        const resultado = await crearHistoriaClinica(body);
-
-        if (resultado.success) {
-            console.log("✅ Historia Clínica creada con _id:", resultado.item._id);
-            return ok({
-                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-                body: resultado
-            });
-        } else {
-            return serverError({
-                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-                body: { error: resultado.error }
-            });
-        }
-    } catch (error) {
-        console.error("❌ Error creando Historia Clínica:", error);
         return serverError({
             headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
             body: { error: error.message }
@@ -2329,6 +2246,12 @@ export async function post_updateHistoriaClinica(request) {
     const body = await request.body.json();
     const { historiaId, ...datos } = body;
 
+    console.log("🌐 [HTTP ENDPOINT] Recibiendo request updateHistoriaClinica:", {
+      historiaId,
+      datosCampos: Object.keys(datos),
+      atendido: datos.atendido
+    });
+
     if (!historiaId) {
       return badRequest({
         headers: {
@@ -2338,6 +2261,11 @@ export async function post_updateHistoriaClinica(request) {
         body: { success: false, error: "El parámetro 'historiaId' es requerido" }
       });
     }
+
+    console.log("🌐 [HTTP ENDPOINT] Llamando a actualizarHistoriaClinica con:", {
+      historiaId,
+      datosTipo: typeof datos
+    });
 
     const resultado = await actualizarHistoriaClinica(historiaId, datos);
 
@@ -2743,52 +2671,6 @@ export async function post_twilioWhatsAppWebhook(request) {
                 "Content-Type": "text/xml"
             },
             body: "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>"
-        });
-    }
-}
-
-/**
- * ════════════════════════════════════════════════════════════════════════════
- * ENDPOINT DE PRUEBA - SINCRONIZACIÓN CON POSTGRESQL
- * ════════════════════════════════════════════════════════════════════════════
- */
-
-/**
- * GET: Probar sincronización con PostgreSQL
- * URL: /_functions/testPostgres?wixId=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
- */
-export async function get_testPostgres(request) {
-    const { wixId } = request.query;
-
-    if (!wixId) {
-        return badRequest({
-            headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            },
-            body: { success: false, error: "El parámetro 'wixId' es requerido" }
-        });
-    }
-
-    try {
-        console.log(`[testPostgres] Iniciando prueba para wixId: ${wixId}`);
-        const resultado = await testSincronizarPostgres(wixId);
-
-        return ok({
-            headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            },
-            body: resultado
-        });
-    } catch (error) {
-        console.error("[testPostgres] Error:", error);
-        return serverError({
-            headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            },
-            body: { success: false, error: error.message }
         });
     }
 }

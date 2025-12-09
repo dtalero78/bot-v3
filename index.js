@@ -436,28 +436,12 @@ async function marcarPagado(cedula) {
 // Marcar como pagado en PostgreSQL (DigitalOcean)
 async function marcarPagadoPostgres(cedula) {
   try {
-    // Primero verificar si existe el campo 'pagado', si no, crearlo
-    const checkColumn = await pool.query(`
-      SELECT column_name
-      FROM information_schema.columns
-      WHERE table_name = 'historiaclinica' AND column_name = 'pagado'
-    `);
-
-    if (checkColumn.rows.length === 0) {
-      // Crear el campo 'pagado' si no existe
-      await pool.query(`
-        ALTER TABLE historiaclinica
-        ADD COLUMN IF NOT EXISTS pagado BOOLEAN DEFAULT FALSE
-      `);
-      console.log('📊 Campo "pagado" creado en PostgreSQL');
-    }
-
-    // Actualizar el registro
+    // Actualizar el registro (las columnas pagado y fecha_pago ya fueron creadas)
     const result = await pool.query(`
-      UPDATE historiaclinica
+      UPDATE "HistoriaClinica"
       SET pagado = TRUE,
           fecha_pago = NOW()
-      WHERE numero_id = $1
+      WHERE "numeroId" = $1
       RETURNING *
     `, [cedula]);
 
