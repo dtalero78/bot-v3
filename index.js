@@ -2,9 +2,34 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const OpenAI = require('openai');
+const { Pool } = require('pg');
 
 // Importar el prompt del sistema
 const { systemPrompt } = require('./prompt');
+
+// ========================================
+// CONFIGURACIÓN POSTGRESQL (DigitalOcean)
+// ========================================
+const pool = new Pool({
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
+// Verificar conexión a PostgreSQL al iniciar
+pool.connect((err, client, release) => {
+  if (err) {
+    console.error('❌ Error conectando a PostgreSQL:', err.message);
+  } else {
+    console.log('✅ Conectado a PostgreSQL (DigitalOcean)');
+    release();
+  }
+});
 
 const app = express();
 app.use(express.json());
@@ -396,7 +421,7 @@ async function marcarPagado(cedula) {
       }
     });
 
-    console.log(`💰 Usuario ${cedula} marcado como pagado`);
+    console.log(`💰 Usuario ${cedula} marcado como pagado en Wix`);
     return {
       success: true,
       data: response.data,
@@ -404,6 +429,47 @@ async function marcarPagado(cedula) {
     };
   } catch (error) {
     console.error('Error marcando como pagado:', error.response?.data || error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+// Marcar como pagado en PostgreSQL (DigitalOcean)
+async function marcarPagadoPostgres(cedula) {
+  try {
+    // Primero verificar si existe el campo 'pagado', si no, crearlo
+    const checkColumn = await pool.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'historiaclinica' AND column_name = 'pagado'
+    `);
+
+    if (checkColumn.rows.length === 0) {
+      // Crear el campo 'pagado' si no existe
+      await pool.query(`
+        ALTER TABLE historiaclinica
+        ADD COLUMN IF NOT EXISTS pagado BOOLEAN DEFAULT FALSE
+      `);
+      console.log('📊 Campo "pagado" creado en PostgreSQL');
+    }
+
+    // Actualizar el registro
+    const result = await pool.query(`
+      UPDATE historiaclinica
+      SET pagado = TRUE,
+          fecha_pago = NOW()
+      WHERE numero_id = $1
+      RETURNING *
+    `, [cedula]);
+
+    if (result.rowCount > 0) {
+      console.log(`💰 Usuario ${cedula} marcado como pagado en PostgreSQL`);
+      return { success: true, data: result.rows[0] };
+    } else {
+      console.log(`⚠️ No se encontró registro con cédula ${cedula} en PostgreSQL`);
+      return { success: false, message: 'Registro no encontrado en PostgreSQL' };
+    }
+  } catch (error) {
+    console.error('❌ Error marcando como pagado en PostgreSQL:', error.message);
     return { success: false, error: error.message };
   }
 }
@@ -875,7 +941,7 @@ app.post('/webhook-pagos', async (req, res) => {
 • Lunes a Viernes 7:30am-4:30pm
 • Sábados 8am-11:30am
 
-📲 *Agenda aquí:* https://www.bsl.com.co/nuevaorden-1
+📲 *Agenda aquí:* https://bsl-plataforma.com/nuevaorden1.html
 
 ¿Tienes alguna pregunta sobre los exámenes?`;
 
@@ -926,7 +992,7 @@ app.post('/webhook-pagos', async (req, res) => {
           return res.status(200).json({ status: 'ok', message: 'Documento inválido' });
         }
 
-        // 2. Marcar como pagado
+        // 2. Marcar como pagado en Wix
         await sendWhatsAppMessage(from, `⏳ Procesando pago para documento ${documento}...`);
 
         const resultadoPago = await marcarPagado(documento);
@@ -934,6 +1000,14 @@ app.post('/webhook-pagos', async (req, res) => {
         if (!resultadoPago.success) {
           await sendWhatsAppMessage(from, `❌ No encontré un registro con el documento ${documento}.\n\nVerifica que:\n• El número esté correcto\n• Ya hayas realizado tu examen médico`);
           return res.status(200).json({ status: 'ok', message: 'Documento no encontrado' });
+        }
+
+        // 2.1 Marcar como pagado en PostgreSQL (DigitalOcean)
+        const resultadoPostgres = await marcarPagadoPostgres(documento);
+        if (resultadoPostgres.success) {
+          console.log(`✅ Pago sincronizado en PostgreSQL para ${documento}`);
+        } else {
+          console.log(`⚠️ No se pudo sincronizar en PostgreSQL: ${resultadoPostgres.message || resultadoPostgres.error}`);
         }
 
         // 3. Generar URL del certificado
