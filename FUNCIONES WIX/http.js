@@ -801,6 +801,8 @@ export function post_handleInput1(request) {
                         const existingConversation = queryResult.items[0];
                         if (bodyText === "...transfiriendo con asesor") {
                             existingConversation.stopBot = true;
+                        } else if (bodyText === "En un momento llegará tu certificado") {
+                            existingConversation.stopBot = true;
                         } else if (bodyText === "...te dejo con el bot 🤖") {
                             existingConversation.stopBot = false;
                         }

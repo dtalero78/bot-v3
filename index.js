@@ -558,6 +558,10 @@ app.post('/webhook', async (req, res) => {
         console.log(`🎯 Comando detectado: detener bot para ${userId}`);
         await updateStopBotOnly(userId, true);
         console.log(`🛑 Bot detenido para ${userId} por el administrador`);
+      } else if (messageText === 'En un momento llegará tu certificado') {
+        console.log(`🎯 Comando detectado: detener bot (certificado) para ${userId}`);
+        await updateStopBotOnly(userId, true);
+        console.log(`🛑 Bot detenido para ${userId} - certificado en proceso`);
       } else if (messageText === '...te dejo con el bot 🤖') {
         console.log(`🎯 Comando detectado: reactivar bot para ${userId}`);
         await updateStopBotOnly(userId, false);
