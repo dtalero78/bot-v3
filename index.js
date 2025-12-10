@@ -205,11 +205,9 @@ async function clasificarImagen(base64Image, mimeType) {
 
 1. "comprobante_pago" - Si es un comprobante de pago, transferencia bancaria, recibo de pago, captura de Nequi, Daviplata, Bancolombia, etc.
 
-2. "listado_examenes" - Si es una foto o documento que muestra un listado de exámenes médicos ocupacionales que la empresa le pide al trabajador (puede incluir: examen médico, audiometría, visiometría, optometría, espirometría, laboratorios, perfil lipídico, glicemia, etc.)
+2. "otra_imagen" - Si es cualquier otra cosa que no sea un comprobante de pago.
 
-3. "otra_imagen" - Si es cualquier otra cosa que no encaja en las categorías anteriores.
-
-Responde solo con una de las tres opciones, sin explicación adicional.`
+Responde solo con una de las dos opciones, sin explicación adicional.`
             },
             {
               type: 'image_url',
@@ -227,8 +225,6 @@ Responde solo con una de las tres opciones, sin explicación adicional.`
 
     if (resultado.includes('comprobante_pago')) {
       return 'comprobante_pago';
-    } else if (resultado.includes('listado_examenes')) {
-      return 'listado_examenes';
     } else {
       return 'otra_imagen';
     }
