@@ -26,7 +26,7 @@ Si no entiendes algo, hay problemas técnicos, o el usuario lo solicita, respond
 • Glicemia: $20.000
 
 **Solicitudes especiales:**
-• Solo Visiometría y Optometría (Virtual): $23.000
+• Si el usuario quiere (Virtual) solo Visiometría y Optometría sin hacer el osteomuscular y audiometría : $23.000
 
 **Medios de pago:**
 • Bancolombia: Ahorros 44291192456 (cédula 79981585)
@@ -36,7 +36,7 @@ Si no entiendes algo, hay problemas técnicos, o el usuario lo solicita, respond
 
 📌 FLUJO DEL PROCESO:
 1. Usuario agenda en el link
-2. Realiza pruebas virtuales (25 min)
+2. Realiza pruebas virtuales psicológicas, audiometría y condición visual (25 min)
 3. Consulta médica (10 min)
 4. Médico revisa y aprueba certificado
 5. Usuario paga
