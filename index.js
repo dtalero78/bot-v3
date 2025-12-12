@@ -266,17 +266,20 @@ async function buscarPacientePorCelular(celular) {
   }
 }
 
-// Consultar cita en HistoriaClinica por número de documento
+// Consultar cita en HistoriaClinica por número de documento (PostgreSQL)
 async function consultarCita(numeroDocumento) {
   try {
-    const response = await axios.get(`${WIX_BACKEND_URL}/_functions/historiaClinicaPorNumeroId`, {
-      params: {
-        numeroId: numeroDocumento
-      }
-    });
+    const result = await pool.query(`
+      SELECT "_id", "primerNombre", "segundoNombre", "primerApellido", "segundoApellido",
+             "celular", "empresa", "fechaAtencion", "fechaConsulta", "ciudad"
+      FROM "HistoriaClinica"
+      WHERE "numeroId" = $1
+      ORDER BY "fechaAtencion" DESC
+      LIMIT 1
+    `, [numeroDocumento]);
 
-    if (response.data && response.data.data) {
-      const paciente = response.data.data;
+    if (result.rows.length > 0) {
+      const paciente = result.rows[0];
       return {
         success: true,
         paciente: {
@@ -290,26 +293,29 @@ async function consultarCita(numeroDocumento) {
       return { success: false, message: 'No se encontró información para ese número de documento' };
     }
   } catch (error) {
-    console.error('Error consultando cita:', error.response?.data || error.message);
+    console.error('Error consultando cita en PostgreSQL:', error.message);
     return { success: false, message: 'No se encontró cita programada con ese documento' };
   }
 }
 
-// Consultar estado completo del paciente (HistoriaClinica + FORMULARIO)
+// Consultar estado completo del paciente (PostgreSQL + FORMULARIO en Wix)
 async function consultarEstadoPaciente(numeroDocumento) {
   try {
-    // 1. Buscar en HistoriaClinica
-    const historiaResponse = await axios.get(`${WIX_BACKEND_URL}/_functions/historiaClinicaPorNumeroId`, {
-      params: {
-        numeroId: numeroDocumento
-      }
-    });
+    // 1. Buscar en HistoriaClinica (PostgreSQL)
+    const result = await pool.query(`
+      SELECT "_id", "primerNombre", "segundoNombre", "primerApellido", "segundoApellido",
+             "celular", "empresa", "fechaAtencion", "fechaConsulta", "ciudad"
+      FROM "HistoriaClinica"
+      WHERE "numeroId" = $1
+      ORDER BY "fechaAtencion" DESC
+      LIMIT 1
+    `, [numeroDocumento]);
 
-    if (!historiaResponse.data || !historiaResponse.data.data) {
+    if (result.rows.length === 0) {
       return { success: false, message: 'No se encontró información para ese número de documento' };
     }
 
-    const paciente = historiaResponse.data.data;
+    const paciente = result.rows[0];
     const historiaId = paciente._id;
     const nombre = `${paciente.primerNombre || ''} ${paciente.primerApellido || ''}`.trim();
     const ciudad = paciente.ciudad || '';
@@ -317,7 +323,7 @@ async function consultarEstadoPaciente(numeroDocumento) {
     const fechaConsulta = paciente.fechaConsulta ? new Date(paciente.fechaConsulta) : null;
     const ahora = new Date();
 
-    // 2. Buscar en FORMULARIO usando el _id de HistoriaClinica
+    // 2. Buscar en FORMULARIO usando el _id de HistoriaClinica (aún en Wix)
     let tieneFormulario = false;
     try {
       const formularioResponse = await axios.get(`${WIX_BACKEND_URL}/_functions/formularioPorIdGeneral`, {
@@ -399,7 +405,7 @@ async function consultarEstadoPaciente(numeroDocumento) {
     };
 
   } catch (error) {
-    console.error('❌ ERROR en consultarEstadoPaciente:', error.response?.data || error.message);
+    console.error('❌ ERROR en consultarEstadoPaciente:', error.message);
     console.error('❌ ERROR stack:', error.stack);
     return { success: false, message: 'Error al consultar el estado del paciente' };
   }
