@@ -299,13 +299,19 @@ async function consultarCita(numeroDocumento) {
 
   // 2. Fallback: Buscar en Wix
   try {
-    const wixResponse = await axios.get(`${WIX_BACKEND_URL}/_functions/historiaClinicaPorNumeroId`, {
+    const wixUrl = `${WIX_BACKEND_URL}/_functions/historiaClinicaPorNumeroId`;
+    console.log(`🌐 Consultando Wix: ${wixUrl}?numeroId=${numeroDocumento}`);
+
+    const wixResponse = await axios.get(wixUrl, {
       params: { numeroId: numeroDocumento }
     });
 
+    console.log(`🌐 Respuesta Wix status: ${wixResponse.status}`);
+    console.log(`🌐 Respuesta Wix data keys: ${Object.keys(wixResponse.data || {})}`);
+
     if (wixResponse.data && wixResponse.data.data) {
       const paciente = wixResponse.data.data;
-      console.log(`✅ Cita encontrada en Wix para ${numeroDocumento}`);
+      console.log(`✅ Cita encontrada en Wix para ${numeroDocumento}: ${paciente.primerNombre} ${paciente.primerApellido}`);
       return {
         success: true,
         paciente: {
@@ -315,9 +321,14 @@ async function consultarCita(numeroDocumento) {
           empresa: paciente.empresa
         }
       };
+    } else {
+      console.log(`⚠️ Wix respondió pero sin data para ${numeroDocumento}`);
     }
   } catch (error) {
-    console.log(`🔍 No encontrado en Wix para ${numeroDocumento}:`, error.response?.status || error.message);
+    console.log(`❌ Error consultando Wix para ${numeroDocumento}:`, error.response?.status || error.message);
+    if (error.response?.data) {
+      console.log(`❌ Wix error data:`, JSON.stringify(error.response.data));
+    }
   }
 
   return { success: false, message: 'No se encontró información para ese número de documento' };
