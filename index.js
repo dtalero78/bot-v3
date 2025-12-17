@@ -334,10 +334,13 @@ async function consultarCita(numeroDocumento) {
   return { success: false, message: 'No se encontró información para ese número de documento' };
 }
 
-// Consultar estado completo del paciente (PostgreSQL + FORMULARIO en Wix)
+// Consultar estado completo del paciente (PostgreSQL + Wix fallback + FORMULARIO en Wix)
 async function consultarEstadoPaciente(numeroDocumento) {
   try {
-    // 1. Buscar en HistoriaClinica (PostgreSQL)
+    let paciente = null;
+    let fuenteDatos = '';
+
+    // 1. Buscar primero en HistoriaClinica (PostgreSQL)
     const result = await pool.query(`
       SELECT "_id", "primerNombre", "segundoNombre", "primerApellido", "segundoApellido",
              "celular", "empresa", "fechaAtencion", "fechaConsulta", "ciudad"
@@ -347,11 +350,50 @@ async function consultarEstadoPaciente(numeroDocumento) {
       LIMIT 1
     `, [numeroDocumento]);
 
-    if (result.rows.length === 0) {
+    if (result.rows.length > 0) {
+      paciente = result.rows[0];
+      fuenteDatos = 'PostgreSQL';
+      console.log(`✅ Paciente encontrado en PostgreSQL para ${numeroDocumento}`);
+    } else {
+      // 2. Fallback: Buscar en Wix
+      console.log(`🔍 No encontrado en PostgreSQL, buscando en Wix para ${numeroDocumento}...`);
+      try {
+        const wixUrl = `${WIX_BACKEND_URL}/_functions/historiaClinicaPorNumeroId`;
+        console.log(`🌐 Consultando Wix: ${wixUrl}?numeroId=${numeroDocumento}`);
+
+        const wixResponse = await axios.get(wixUrl, {
+          params: { numeroId: numeroDocumento }
+        });
+
+        console.log(`🌐 Respuesta Wix status: ${wixResponse.status}`);
+
+        if (wixResponse.data && wixResponse.data.data) {
+          const wixPaciente = wixResponse.data.data;
+          paciente = {
+            _id: wixPaciente._id,
+            primerNombre: wixPaciente.primerNombre,
+            segundoNombre: wixPaciente.segundoNombre,
+            primerApellido: wixPaciente.primerApellido,
+            segundoApellido: wixPaciente.segundoApellido,
+            celular: wixPaciente.celular,
+            empresa: wixPaciente.empresa,
+            fechaAtencion: wixPaciente.fechaAtencion,
+            fechaConsulta: wixPaciente.fechaConsulta,
+            ciudad: wixPaciente.ciudad
+          };
+          fuenteDatos = 'Wix';
+          console.log(`✅ Paciente encontrado en Wix para ${numeroDocumento}: ${paciente.primerNombre} ${paciente.primerApellido}`);
+        }
+      } catch (wixError) {
+        console.log(`❌ Error consultando Wix para ${numeroDocumento}:`, wixError.response?.status || wixError.message);
+      }
+    }
+
+    if (!paciente) {
       return { success: false, message: 'No se encontró información para ese número de documento' };
     }
 
-    const paciente = result.rows[0];
+    console.log(`📊 Usando datos de ${fuenteDatos} para ${numeroDocumento}`);
     const historiaId = paciente._id;
     const nombre = `${paciente.primerNombre || ''} ${paciente.primerApellido || ''}`.trim();
     const ciudad = paciente.ciudad || '';
