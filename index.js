@@ -418,7 +418,10 @@ async function consultarEstadoPaciente(numeroDocumento) {
     }
 
     // 3. Evaluar condiciones (en zona horaria de Colombia)
-    console.log(`🔍 DEBUG Antes de evaluar condiciones - fechaAtencion:`, fechaAtencion, `fechaConsulta:`, fechaConsulta);
+    console.log(`🔍 DEBUG Antes de evaluar condiciones`);
+    console.log(`🔍 DEBUG fechaAtencion:`, fechaAtencion);
+    console.log(`🔍 DEBUG fechaConsulta:`, fechaConsulta);
+    console.log(`🔍 DEBUG ahora:`, ahora);
     let estado = '';
     let estadoDetalle = '';
 
