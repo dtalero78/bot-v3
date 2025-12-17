@@ -39,7 +39,7 @@ Si no entiendes algo, hay problemas técnicos, o el usuario lo solicita, respond
 2. Realiza pruebas virtuales psicológicas, audiometría y condición visual (25 min)
 3. Consulta médica (10 min)
 4. Médico revisa y aprueba certificado
-5. Usuario paga
+5. Usuario paga y envía el comprobante por whatsapp
 6. Descarga certificado sin marca de agua
 7. El link de conexión se envía por whatsapp
 

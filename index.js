@@ -266,8 +266,9 @@ async function buscarPacientePorCelular(celular) {
   }
 }
 
-// Consultar cita en HistoriaClinica por número de documento (PostgreSQL)
+// Consultar cita en HistoriaClinica por número de documento (PostgreSQL + Wix fallback)
 async function consultarCita(numeroDocumento) {
+  // 1. Buscar primero en PostgreSQL
   try {
     const result = await pool.query(`
       SELECT "_id", "primerNombre", "segundoNombre", "primerApellido", "segundoApellido",
@@ -280,6 +281,7 @@ async function consultarCita(numeroDocumento) {
 
     if (result.rows.length > 0) {
       const paciente = result.rows[0];
+      console.log(`✅ Cita encontrada en PostgreSQL para ${numeroDocumento}`);
       return {
         success: true,
         paciente: {
@@ -289,13 +291,36 @@ async function consultarCita(numeroDocumento) {
           empresa: paciente.empresa
         }
       };
-    } else {
-      return { success: false, message: 'No se encontró información para ese número de documento' };
     }
+    console.log(`🔍 No encontrado en PostgreSQL, buscando en Wix para ${numeroDocumento}...`);
   } catch (error) {
     console.error('Error consultando cita en PostgreSQL:', error.message);
-    return { success: false, message: 'No se encontró cita programada con ese documento' };
   }
+
+  // 2. Fallback: Buscar en Wix
+  try {
+    const wixResponse = await axios.get(`${WIX_BACKEND_URL}/_functions/historiaClinicaPorNumeroId`, {
+      params: { numeroId: numeroDocumento }
+    });
+
+    if (wixResponse.data && wixResponse.data.data) {
+      const paciente = wixResponse.data.data;
+      console.log(`✅ Cita encontrada en Wix para ${numeroDocumento}`);
+      return {
+        success: true,
+        paciente: {
+          nombre: `${paciente.primerNombre || ''} ${paciente.primerApellido || ''}`.trim(),
+          fechaAtencion: paciente.fechaAtencion,
+          celular: paciente.celular,
+          empresa: paciente.empresa
+        }
+      };
+    }
+  } catch (error) {
+    console.log(`🔍 No encontrado en Wix para ${numeroDocumento}:`, error.response?.status || error.message);
+  }
+
+  return { success: false, message: 'No se encontró información para ese número de documento' };
 }
 
 // Consultar estado completo del paciente (PostgreSQL + FORMULARIO en Wix)
