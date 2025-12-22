@@ -167,10 +167,40 @@ async function saveConversationToDB(userId, mensajes, stopBot = false, nombre = 
     });
 
     console.log(`💾 Conversación guardada para ${userId} (${mensajes.length} mensajes)`);
+
+    // RAG: Guardar último par pregunta-respuesta para aprendizaje (async, no bloquea)
+    guardarEnRAGAsync(userId, mensajes);
+
     return response.data;
   } catch (error) {
     console.error('Error guardando conversación:', error.response?.data || error.message);
     throw error;
+  }
+}
+
+// Función auxiliar para guardar en RAG de forma asíncrona
+async function guardarEnRAGAsync(userId, mensajes) {
+  try {
+    const { guardarParConEmbedding } = require('./rag');
+
+    // Buscar el último par pregunta-respuesta
+    if (mensajes.length >= 2) {
+      const ultimaPregunta = mensajes[mensajes.length - 2];
+      const ultimaRespuesta = mensajes[mensajes.length - 1];
+
+      if (ultimaPregunta.role === 'user' && ultimaRespuesta.role === 'assistant') {
+        await guardarParConEmbedding({
+          userId,
+          pregunta: ultimaPregunta.content,
+          respuesta: ultimaRespuesta.content,
+          fuente: 'bot',
+          timestampOriginal: new Date()
+        });
+      }
+    }
+  } catch (error) {
+    // Log pero no fallar - RAG es secundario
+    console.error('⚠️ RAG: Error guardando (no crítico):', error.message);
   }
 }
 
@@ -545,16 +575,40 @@ async function marcarPagadoPostgres(cedula) {
 // FIN FUNCIONES PARA FLUJO DE PAGOS
 // ========================================
 
-// Función para obtener respuesta de OpenAI
+// Función para obtener respuesta de OpenAI (con RAG)
 async function getAIResponse(userMessage, conversationHistory = [], contextoPaciente = '') {
   try {
-    // Agregar contexto del paciente al system prompt si está disponible
-    const systemPromptConContexto = contextoPaciente
-      ? systemPrompt + contextoPaciente
-      : systemPrompt;
+    // Importar funciones RAG
+    const { buscarRespuestasSimilares, formatearContextoRAG } = require('./rag');
+
+    // Buscar respuestas similares previas (RAG)
+    let contextoRAG = '';
+    try {
+      const resultadosRAG = await buscarRespuestasSimilares(userMessage, {
+        limite: 3,
+        umbralSimilitud: 0.65,
+        pesoAdmin: 1.5
+      });
+
+      if (resultadosRAG.length > 0) {
+        contextoRAG = formatearContextoRAG(resultadosRAG);
+        console.log(`🧠 RAG: Agregando ${resultadosRAG.length} respuestas previas al contexto`);
+      }
+    } catch (ragError) {
+      console.error('⚠️ RAG: Error (continuando sin RAG):', ragError.message);
+    }
+
+    // Construir system prompt enriquecido
+    let systemPromptEnriquecido = systemPrompt;
+    if (contextoPaciente) {
+      systemPromptEnriquecido += contextoPaciente;
+    }
+    if (contextoRAG) {
+      systemPromptEnriquecido += contextoRAG;
+    }
 
     const messages = [
-      { role: 'system', content: systemPromptConContexto },
+      { role: 'system', content: systemPromptEnriquecido },
       ...conversationHistory,
       { role: 'user', content: userMessage }
     ];
@@ -674,8 +728,30 @@ Por favor envía el comprobante de pago cuando completes la transferencia.`;
         console.log(`🎯 Comando detectado: link de descarga enviado a ${userId}`);
         await updateStopBotOnly(userId, true);
         console.log(`🛑 Bot detenido para ${userId} - link de descarga enviado`);
+      } else if (messageText.length > 15) {
+        // RAG: Guardar respuesta sustancial del admin para aprendizaje
+        console.log(`🧠 RAG: Guardando respuesta del admin para aprendizaje`);
+        try {
+          const { guardarParConEmbedding } = require('./rag');
+          const conversationData = await getConversationFromDB(userId);
+          const mensajesUsuario = conversationData.mensajes?.filter(m => m.from === 'usuario') || [];
+
+          if (mensajesUsuario.length > 0) {
+            const ultimaPregunta = mensajesUsuario[mensajesUsuario.length - 1].mensaje;
+            await guardarParConEmbedding({
+              userId,
+              pregunta: ultimaPregunta,
+              respuesta: messageText,
+              fuente: 'admin',
+              timestampOriginal: new Date()
+            });
+            console.log(`✅ RAG: Respuesta de ADMIN guardada (peso 2x)`);
+          }
+        } catch (ragError) {
+          console.error('⚠️ RAG: Error guardando respuesta admin:', ragError.message);
+        }
       } else {
-        console.log(`⚠️ Mensaje del admin no coincide con comandos conocidos`);
+        console.log(`⚠️ Mensaje del admin muy corto, no se guarda en RAG`);
       }
 
       // Los mensajes del admin no se procesan con el bot
