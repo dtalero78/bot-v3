@@ -1034,7 +1034,7 @@ app.post('/webhook-pagos', async (req, res) => {
         }
 
         // Caso 3: Comprobante de pago válido - pedir documento
-        const mensaje = `✅ *Comprobante de pago recibido*\n\nEscribe tu *número de documento* (solo números, sin puntos).\n\nEjemplo: 1234567890`;
+        const mensaje = `Escribe tu número de documento (solo números, sin puntos).`;
         await sendWhatsAppMessage(from, mensaje);
 
         // Guardar estado en memoria
@@ -1059,7 +1059,7 @@ app.post('/webhook-pagos', async (req, res) => {
 
         // 1. Validar formato de cédula
         if (!esCedula(documento)) {
-          await sendWhatsAppMessage(from, `❌ Por favor escribe un número de documento válido (solo números).\n\nEjemplo: 1234567890`);
+          await sendWhatsAppMessage(from, `Escribe tu número de documento (solo números, sin puntos).`);
           return res.status(200).json({ status: 'ok', message: 'Documento inválido' });
         }
 
