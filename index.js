@@ -585,14 +585,15 @@ async function getAIResponse(userMessage, conversationHistory = [], contextoPaci
     let contextoRAG = '';
     try {
       const resultadosRAG = await buscarRespuestasSimilares(userMessage, {
-        limite: 3,
-        umbralSimilitud: 0.65,
-        pesoAdmin: 1.5
+        limite: 5,  // Aumentado de 3 a 5 para más contexto
+        umbralSimilitud: 0.70,  // Aumentado de 0.65 a 0.70 para mayor precisión
+        pesoAdmin: 2.0  // Aumentado de 1.5 a 2.0 para priorizar respuestas del admin
       });
 
       if (resultadosRAG.length > 0) {
         contextoRAG = formatearContextoRAG(resultadosRAG);
-        console.log(`🧠 RAG: Agregando ${resultadosRAG.length} respuestas previas al contexto`);
+        console.log(`🧠 RAG: Agregando ${resultadosRAG.length} respuestas VERIFICADAS al contexto`);
+        console.log(`🔍 RAG: Similitudes: ${resultadosRAG.map(r => (r.similitud * 100).toFixed(0) + '%').join(', ')}`);
       }
     } catch (ragError) {
       console.error('⚠️ RAG: Error (continuando sin RAG):', ragError.message);

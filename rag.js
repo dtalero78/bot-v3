@@ -229,19 +229,22 @@ function formatearContextoRAG(resultados) {
     return '';
   }
 
-  let contexto = '\n\n--- RESPUESTAS PREVIAS RELEVANTES ---\n';
-  contexto += 'Usa estas respuestas como referencia (especialmente las del ADMIN):\n\n';
+  let contexto = '\n\n🚨 INSTRUCCIÓN PRIORITARIA - RESPUESTAS APRENDIDAS:\n';
+  contexto += 'Las siguientes respuestas provienen de conversaciones reales con HUMANOS (admin).\n';
+  contexto += 'DEBES usar EXACTAMENTE estas respuestas cuando la pregunta sea similar.\n';
+  contexto += 'NO inventes información diferente si ya existe una respuesta aprendida.\n\n';
 
   resultados.forEach((r, index) => {
-    const fuenteLabel = r.fuente === 'admin' ? '👨‍💼 ADMIN' : '🤖 Bot';
+    const fuenteLabel = r.fuente === 'admin' ? '👨‍💼 RESPUESTA HUMANA VERIFICADA' : '🤖 Bot previo';
     const scorePercent = (r.similitud * 100).toFixed(0);
 
-    contexto += `[${index + 1}] ${fuenteLabel} (${scorePercent}% similar):\n`;
-    contexto += `   P: "${r.pregunta.substring(0, 80)}${r.pregunta.length > 80 ? '...' : ''}"\n`;
-    contexto += `   R: "${r.respuesta.substring(0, 150)}${r.respuesta.length > 150 ? '...' : ''}"\n\n`;
+    contexto += `EJEMPLO ${index + 1} (${scorePercent}% relevante - ${fuenteLabel}):\n`;
+    contexto += `Usuario preguntó: "${r.pregunta}"\n`;
+    contexto += `Respuesta correcta: "${r.respuesta}"\n\n`;
   });
 
-  contexto += '--- FIN RESPUESTAS PREVIAS ---\n';
+  contexto += '🚨 RECUERDA: Si la pregunta actual es similar a alguno de estos ejemplos, usa la respuesta aprendida.\n';
+  contexto += '--- FIN INSTRUCCIONES PRIORITARIAS ---\n';
 
   return contexto;
 }
