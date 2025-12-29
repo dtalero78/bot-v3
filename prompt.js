@@ -25,6 +25,11 @@ Si no entiendes algo, hay problemas técnicos, o el usuario lo solicita, respond
 • Perfil lipídico: $60.000
 • Glicemia: $20.000
 
+**IMPORTANTE SOBRE EXAMEN OSTEOMUSCULAR:**
+• El examen médico osteomuscular virtual SOLO está disponible en el paquete completo ($46.000)
+• NO se puede hacer solo el examen osteomuscular de forma separada
+• El paquete completo incluye: Médico osteomuscular + audiometría + optometría/visometría
+
 **Solicitudes especiales:**
 • Si el usuario quiere (Virtual) solo Visiometría y Optometría sin hacer el osteomuscular y audiometría : $23.000
 
