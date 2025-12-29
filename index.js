@@ -1210,6 +1210,92 @@ app.get('/health', (req, res) => {
   });
 });
 
+// ========================================
+// ENDPOINTS DE ESTADÍSTICAS RAG
+// ========================================
+
+// Endpoint para obtener estadísticas por categoría
+app.get('/rag/stats', async (req, res) => {
+  try {
+    const { obtenerEstadisticasPorCategoria } = require('./rag');
+
+    const { fechaDesde, fechaHasta, fuente } = req.query;
+
+    const stats = await obtenerEstadisticasPorCategoria({
+      fechaDesde: fechaDesde || null,
+      fechaHasta: fechaHasta || null,
+      fuente: fuente || null
+    });
+
+    res.status(200).json({
+      success: true,
+      total: stats.length,
+      estadisticas: stats
+    });
+
+  } catch (error) {
+    console.error('❌ Error obteniendo estadísticas:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Endpoint para buscar por categoría
+app.get('/rag/categoria/:categoria', async (req, res) => {
+  try {
+    const { buscarPorCategoria } = require('./rag');
+    const { categoria } = req.params;
+    const { limite = 10, fuente } = req.query;
+
+    const resultados = await buscarPorCategoria(categoria, {
+      limite: parseInt(limite),
+      fuente: fuente || null
+    });
+
+    res.status(200).json({
+      success: true,
+      categoria,
+      total: resultados.length,
+      conversaciones: resultados
+    });
+
+  } catch (error) {
+    console.error('❌ Error buscando por categoría:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Endpoint para obtener preguntas frecuentes
+app.get('/rag/faq', async (req, res) => {
+  try {
+    const { obtenerPreguntasFrecuentes } = require('./rag');
+    const { categoria, limite = 10 } = req.query;
+
+    const faq = await obtenerPreguntasFrecuentes(
+      categoria || null,
+      parseInt(limite)
+    );
+
+    res.status(200).json({
+      success: true,
+      total: faq.length,
+      preguntas_frecuentes: faq
+    });
+
+  } catch (error) {
+    console.error('❌ Error obteniendo FAQs:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Iniciar servidor
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {

@@ -249,10 +249,166 @@ function formatearContextoRAG(resultados) {
   return contexto;
 }
 
+/**
+ * Obtiene estadísticas de conversaciones por categoría
+ * @param {Object} filtros - Filtros opcionales
+ * @returns {Promise<Array>} - Estadísticas por categoría
+ */
+async function obtenerEstadisticasPorCategoria(filtros = {}) {
+  try {
+    const { fechaDesde, fechaHasta, fuente } = filtros;
+
+    let query = `
+      SELECT
+        categoria,
+        COUNT(*) as total,
+        fuente,
+        AVG(veces_usado) as promedio_uso,
+        MAX(created_at) as ultima_interaccion
+      FROM conversacion_embeddings
+      WHERE 1=1
+    `;
+
+    const params = [];
+    let paramIndex = 1;
+
+    if (fechaDesde) {
+      query += ` AND created_at >= $${paramIndex}`;
+      params.push(fechaDesde);
+      paramIndex++;
+    }
+
+    if (fechaHasta) {
+      query += ` AND created_at <= $${paramIndex}`;
+      params.push(fechaHasta);
+      paramIndex++;
+    }
+
+    if (fuente) {
+      query += ` AND fuente = $${paramIndex}`;
+      params.push(fuente);
+      paramIndex++;
+    }
+
+    query += `
+      GROUP BY categoria, fuente
+      ORDER BY total DESC
+    `;
+
+    const result = await pool.query(query, params);
+
+    console.log(`📊 RAG Stats: ${result.rows.length} categorías analizadas`);
+
+    return result.rows.map(row => ({
+      categoria: row.categoria,
+      total: parseInt(row.total),
+      fuente: row.fuente,
+      promedioUso: parseFloat(row.promedio_uso).toFixed(2),
+      ultimaInteraccion: row.ultima_interaccion
+    }));
+
+  } catch (error) {
+    console.error('❌ RAG: Error obteniendo estadísticas:', error.message);
+    return [];
+  }
+}
+
+/**
+ * Busca conversaciones por categoría específica
+ * @param {string} categoria - Categoría a buscar
+ * @param {Object} opciones - Opciones de búsqueda
+ * @returns {Promise<Array>} - Conversaciones de esa categoría
+ */
+async function buscarPorCategoria(categoria, opciones = {}) {
+  const { limite = 10, fuente = null } = opciones;
+
+  try {
+    let query = `
+      SELECT
+        id,
+        pregunta,
+        respuesta,
+        fuente,
+        veces_usado,
+        created_at
+      FROM conversacion_embeddings
+      WHERE categoria = $1
+    `;
+
+    const params = [categoria];
+
+    if (fuente) {
+      query += ` AND fuente = $2`;
+      params.push(fuente);
+    }
+
+    query += `
+      ORDER BY veces_usado DESC, created_at DESC
+      LIMIT $${params.length + 1}
+    `;
+    params.push(limite);
+
+    const result = await pool.query(query, params);
+
+    console.log(`🔍 RAG: ${result.rows.length} conversaciones en categoría "${categoria}"`);
+
+    return result.rows;
+
+  } catch (error) {
+    console.error('❌ RAG: Error buscando por categoría:', error.message);
+    return [];
+  }
+}
+
+/**
+ * Obtiene las preguntas más frecuentes por categoría
+ * @param {string} categoria - Categoría (opcional)
+ * @param {number} limite - Número de preguntas
+ * @returns {Promise<Array>} - Top preguntas más usadas
+ */
+async function obtenerPreguntasFrecuentes(categoria = null, limite = 10) {
+  try {
+    let query = `
+      SELECT
+        pregunta,
+        LEFT(respuesta, 100) as respuesta_preview,
+        categoria,
+        fuente,
+        veces_usado
+      FROM conversacion_embeddings
+    `;
+
+    const params = [];
+
+    if (categoria) {
+      query += ` WHERE categoria = $1`;
+      params.push(categoria);
+      query += ` ORDER BY veces_usado DESC LIMIT $2`;
+      params.push(limite);
+    } else {
+      query += ` ORDER BY veces_usado DESC LIMIT $1`;
+      params.push(limite);
+    }
+
+    const result = await pool.query(query, params);
+
+    console.log(`❓ RAG: ${result.rows.length} preguntas frecuentes`);
+
+    return result.rows;
+
+  } catch (error) {
+    console.error('❌ RAG: Error obteniendo preguntas frecuentes:', error.message);
+    return [];
+  }
+}
+
 module.exports = {
   generarEmbedding,
   guardarParConEmbedding,
   buscarRespuestasSimilares,
   formatearContextoRAG,
-  detectarCategoria
+  detectarCategoria,
+  obtenerEstadisticasPorCategoria,
+  buscarPorCategoria,
+  obtenerPreguntasFrecuentes
 };
