@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preguntas Frecuentes - BSL</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f7fa;
+            color: #2d3748;
+        }
+
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: 240px;
+            background: white;
+            border-right: 1px solid #e2e8f0;
+            padding: 24px 0;
+        }
+
+        .logo {
+            padding: 0 24px 32px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-circle {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 20px;
+        }
+
+        .logo-text {
+            font-size: 14px;
+            color: #64748b;
+            line-height: 1.3;
+        }
+
+        .logo-text strong {
+            display: block;
+            color: #1e293b;
+            font-size: 16px;
+        }
+
+        .nav-item {
+            padding: 12px 24px;
+            cursor: pointer;
+            color: #64748b;
+            font-size: 14px;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .nav-item:hover {
+            background: #f1f5f9;
+            color: #10b981;
+        }
+
+        .nav-item.active {
+            background: #ecfdf5;
+            color: #10b981;
+            border-left-color: #10b981;
+            font-weight: 500;
+        }
+
+        .main-content {
+            flex: 1;
+            padding: 32px;
+        }
+
+        .header {
+            margin-bottom: 32px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            color: #1e293b;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        .filters-bar {
+            background: white;
+            padding: 20px 24px;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 24px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .filter-label {
+            font-size: 14px;
+            color: #64748b;
+            font-weight: 500;
+        }
+
+        .filter-select {
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #475569;
+            background: white;
+            cursor: pointer;
+            min-width: 200px;
+        }
+
+        .filter-select:focus {
+            outline: none;
+            border-color: #10b981;
+        }
+
+        .btn-refresh {
+            padding: 8px 16px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-left: auto;
+        }
+
+        .btn-refresh:hover {
+            background: #059669;
+        }
+
+        .faq-grid {
+            display: grid;
+            gap: 16px;
+        }
+
+        .faq-card {
+            background: white;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            padding: 24px;
+            transition: all 0.2s;
+        }
+
+        .faq-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            border-color: #10b981;
+        }
+
+        .faq-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 16px;
+        }
+
+        .faq-question {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1e293b;
+            line-height: 1.5;
+            flex: 1;
+        }
+
+        .faq-badges {
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+            margin-left: 16px;
+        }
+
+        .badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .badge-admin {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge-categoria {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .badge-uso {
+            background: #e0e7ff;
+            color: #4338ca;
+        }
+
+        .faq-answer {
+            color: #475569;
+            font-size: 14px;
+            line-height: 1.6;
+            padding: 16px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border-left: 3px solid #10b981;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #94a3b8;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #94a3b8;
+            background: white;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .result-count {
+            font-size: 14px;
+            color: #64748b;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <div class="logo">
+                <div class="logo-circle">BSL</div>
+                <div class="logo-text">
+                    <strong>Bienestar & Salud</strong>
+                    Laboral
+                </div>
+            </div>
+            <div class="nav-item" onclick="window.location.href='/rag-dashboard.html'">📊 Dashboard RAG</div>
+            <div class="nav-item active">❓ Preguntas Frecuentes</div>
+            <div class="nav-item" onclick="window.location.href='/health'">💚 Health Check</div>
+        </div>
+
+        <div class="main-content">
+            <div class="header">
+                <h1>Preguntas Frecuentes</h1>
+                <p>Las preguntas más consultadas por los usuarios</p>
+            </div>
+
+            <div class="filters-bar">
+                <span class="filter-label">Filtrar por:</span>
+                <select class="filter-select" id="filterCategoria" onchange="loadFAQ()">
+                    <option value="">Todas las categorías</option>
+                    <option value="general">General</option>
+                    <option value="virtual">Virtual</option>
+                    <option value="examenes">Exámenes</option>
+                    <option value="agendamiento">Agendamiento</option>
+                    <option value="certificado">Certificado</option>
+                    <option value="precios">Precios</option>
+                    <option value="presencial">Presencial</option>
+                    <option value="horarios">Horarios</option>
+                    <option value="pagos">Pagos</option>
+                </select>
+
+                <select class="filter-select" id="filterLimite" onchange="loadFAQ()">
+                    <option value="10">Top 10</option>
+                    <option value="20">Top 20</option>
+                    <option value="50">Top 50</option>
+                    <option value="100">Top 100</option>
+                </select>
+
+                <button class="btn-refresh" onclick="loadFAQ()">↻ Actualizar</button>
+            </div>
+
+            <div class="result-count" id="resultCount">Cargando...</div>
+
+            <div class="faq-grid" id="faqGrid">
+                <div class="loading">Cargando preguntas frecuentes...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        async function loadFAQ() {
+            try {
+                const categoria = document.getElementById('filterCategoria').value;
+                const limite = document.getElementById('filterLimite').value;
+
+                const params = new URLSearchParams();
+                if (categoria) params.append('categoria', categoria);
+                if (limite) params.append('limite', limite);
+
+                const url = `${API_BASE}/rag/faq?${params.toString()}`;
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.success) {
+                    displayFAQ(data.preguntas_frecuentes);
+                }
+            } catch (error) {
+                console.error('Error loading FAQ:', error);
+                document.getElementById('faqGrid').innerHTML = `
+                    <div class="empty-state">
+                        ❌ Error cargando preguntas frecuentes
+                        <div style="margin-top: 8px; font-size: 13px;">Verifica que el servidor esté corriendo</div>
+                    </div>
+                `;
+            }
+        }
+
+        function displayFAQ(preguntas) {
+            const grid = document.getElementById('faqGrid');
+            const count = document.getElementById('resultCount');
+
+            if (preguntas.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-state">
+                        📭 No hay preguntas frecuentes para mostrar
+                    </div>
+                `;
+                count.textContent = '0 preguntas encontradas';
+                return;
+            }
+
+            count.textContent = `${preguntas.length} preguntas encontradas`;
+
+            grid.innerHTML = preguntas.map((faq, index) => `
+                <div class="faq-card">
+                    <div class="faq-header">
+                        <div class="faq-question">${index + 1}. ${faq.pregunta}</div>
+                        <div class="faq-badges">
+                            <span class="badge badge-categoria">${faq.categoria}</span>
+                            <span class="badge badge-uso">🔥 ${faq.veces_usado} usos</span>
+                            ${faq.fuente === 'admin' ? '<span class="badge badge-admin">👨‍💼 Admin</span>' : ''}
+                        </div>
+                    </div>
+                    <div class="faq-answer">${faq.respuesta_preview}${faq.respuesta_preview.length >= 100 ? '...' : ''}</div>
+                </div>
+            `).join('');
+        }
+
+        window.addEventListener('DOMContentLoaded', loadFAQ);
+    </script>
+</body>
+</html>

@@ -34,6 +34,9 @@ pool.connect((err, client, release) => {
 const app = express();
 app.use(express.json());
 
+// Servir archivos estáticos (dashboard)
+app.use(express.static('public'));
+
 // Configurar OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_KEY,
@@ -1302,4 +1305,7 @@ app.listen(PORT, () => {
   console.log(`🤖 Bot de WhatsApp corriendo en puerto ${PORT}`);
   console.log(`📱 Webhook URL: http://localhost:${PORT}/webhook`);
   console.log(`💚 Health check: http://localhost:${PORT}/health`);
+  console.log(`📊 Dashboard RAG: http://localhost:${PORT}/rag-dashboard.html`);
+  console.log(`❓ FAQ: http://localhost:${PORT}/rag-faq.html`);
+  console.log(`📈 API Stats: http://localhost:${PORT}/rag/stats`);
 });
