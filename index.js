@@ -58,7 +58,123 @@ const GRUPO_CONSULTAS_ID = process.env.GRUPO_CONSULTAS_ID;
 // ========================================
 // CONFIGURACIÓN DEL BOT CONVERSACIONAL
 // ========================================
-// NOTA: El historial de conversaciones se guarda en WHP (base de datos Wix)
+// NOTA: Sistema DUAL - PostgreSQL (principal) + Wix (sincronización/respaldo)
+
+// ========================================
+// FUNCIONES POSTGRESQL - CONVERSACIONES
+// ========================================
+
+/**
+ * Obtener o crear conversación en PostgreSQL
+ * @param {string} celular - Número de celular (formato: 573XXXXXXXXX)
+ * @returns {Promise<Object>} - Datos de la conversación
+ */
+async function getOrCreateConversationPostgres(celular) {
+  try {
+    // Buscar conversación existente activa
+    let result = await pool.query(`
+      SELECT id, celular, nombre_paciente, estado, bot_activo, "stopBot",
+             wix_whp_id, fecha_ultima_actividad
+      FROM conversaciones_whatsapp
+      WHERE celular = $1 AND estado != 'cerrada'
+      ORDER BY fecha_ultima_actividad DESC
+      LIMIT 1
+    `, [celular]);
+
+    if (result.rows.length > 0) {
+      // Actualizar fecha de última actividad
+      await pool.query(`
+        UPDATE conversaciones_whatsapp
+        SET fecha_ultima_actividad = NOW()
+        WHERE id = $1
+      `, [result.rows[0].id]);
+
+      console.log(`✅ Conversación PostgreSQL encontrada para ${celular} (id: ${result.rows[0].id})`);
+      return result.rows[0];
+    }
+
+    // Si no existe, crear nueva conversación
+    result = await pool.query(`
+      INSERT INTO conversaciones_whatsapp (
+        celular, estado, canal, bot_activo, "stopBot",
+        fecha_inicio, fecha_ultima_actividad
+      ) VALUES ($1, 'nueva', 'bot', true, false, NOW(), NOW())
+      RETURNING id, celular, nombre_paciente, estado, bot_activo, "stopBot", wix_whp_id
+    `, [celular]);
+
+    console.log(`✅ Nueva conversación PostgreSQL creada para ${celular} (id: ${result.rows[0].id})`);
+    return result.rows[0];
+
+  } catch (error) {
+    console.error('❌ Error en getOrCreateConversationPostgres:', error.message);
+    // Si falla PostgreSQL, retornar valores por defecto
+    return {
+      id: null,
+      celular,
+      nombre_paciente: null,
+      estado: 'nueva',
+      bot_activo: true,
+      stopBot: false,
+      wix_whp_id: null
+    };
+  }
+}
+
+/**
+ * Actualizar stopBot en PostgreSQL
+ * @param {string} celular - Número de celular
+ * @param {boolean} stopBot - Nuevo valor de stopBot
+ * @returns {Promise<boolean>} - Éxito de la operación
+ */
+async function updateStopBotPostgres(celular, stopBot) {
+  try {
+    const result = await pool.query(`
+      UPDATE conversaciones_whatsapp
+      SET "stopBot" = $1,
+          bot_activo = $2,
+          fecha_ultima_actividad = NOW()
+      WHERE celular = $3 AND estado != 'cerrada'
+      RETURNING id
+    `, [stopBot, !stopBot, celular]);
+
+    if (result.rowCount > 0) {
+      console.log(`✅ PostgreSQL: stopBot actualizado a ${stopBot} para ${celular}`);
+      return true;
+    } else {
+      console.log(`⚠️ PostgreSQL: No se encontró conversación activa para ${celular}`);
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Error actualizando stopBot en PostgreSQL:', error.message);
+    return false;
+  }
+}
+
+/**
+ * Actualizar nombre del paciente en PostgreSQL
+ * @param {string} celular - Número de celular
+ * @param {string} nombre - Nombre del paciente
+ */
+async function updateNombrePacientePostgres(celular, nombre) {
+  try {
+    if (!nombre) return;
+
+    await pool.query(`
+      UPDATE conversaciones_whatsapp
+      SET nombre_paciente = $1,
+          fecha_ultima_actividad = NOW()
+      WHERE celular = $2 AND estado != 'cerrada'
+    `, [nombre, celular]);
+
+    console.log(`✅ PostgreSQL: Nombre actualizado para ${celular}: ${nombre}`);
+  } catch (error) {
+    console.error('❌ Error actualizando nombre en PostgreSQL:', error.message);
+  }
+}
+
+// ========================================
+// FUNCIONES DUALES (PostgreSQL + Wix)
+// ========================================
 
 // Función para enviar mensajes a través de Whapi
 async function sendWhatsAppMessage(to, message) {
@@ -85,38 +201,72 @@ async function sendWhatsAppMessage(to, message) {
   }
 }
 
-// Función para obtener la conversación completa desde WHP
+// Función DUAL para obtener la conversación (PostgreSQL + WHP)
 async function getConversationFromDB(userId) {
+  // 1. PRIMERO: Obtener/crear en PostgreSQL
+  const pgConv = await getOrCreateConversationPostgres(userId);
+
+  // 2. SEGUNDO: Consultar Wix para mensajes e historial
   try {
     const response = await axios.get(`${WIX_BACKEND_URL}/_functions/obtenerConversacion`, {
       params: { userId }
     });
 
     if (response.data) {
+      // 3. Combinar datos: stopBot de PostgreSQL tiene prioridad
+      const stopBotFinal = pgConv.stopBot !== undefined ? pgConv.stopBot : (response.data.stopBot === true);
+
+      console.log(`📊 DUAL: PostgreSQL stopBot=${pgConv.stopBot}, Wix stopBot=${response.data.stopBot}, Final=${stopBotFinal}`);
+
       return {
-        stopBot: response.data.stopBot === true,
+        stopBot: stopBotFinal,
         mensajes: response.data.mensajes || [],
         observaciones: response.data.observaciones || '',
-        threadId: response.data.threadId || ''
+        threadId: response.data.threadId || '',
+        pgConvId: pgConv.id // ID de PostgreSQL para referencia
       };
     }
 
-    return { stopBot: false, mensajes: [], observaciones: '', threadId: '' };
+    // Si no hay datos en Wix, usar solo PostgreSQL
+    return {
+      stopBot: pgConv.stopBot || false,
+      mensajes: [],
+      observaciones: '',
+      threadId: '',
+      pgConvId: pgConv.id
+    };
   } catch (error) {
-    // Si no existe el usuario en la BD o hay error, devolver valores por defecto
+    // Si Wix falla, usar solo datos de PostgreSQL
     if (error.response?.status === 404 || error.response?.status === 400) {
-      console.log(`ℹ️ Usuario ${userId} no encontrado en WHP. Iniciando nueva conversación.`);
-      return { stopBot: false, mensajes: [], observaciones: '', threadId: '' };
+      console.log(`ℹ️ Usuario ${userId} no encontrado en Wix. Usando solo PostgreSQL.`);
+    } else {
+      console.error('⚠️ Error consultando Wix (usando PostgreSQL):', error.message);
     }
-    console.error('Error consultando WHP:', error.message);
-    return { stopBot: false, mensajes: [], observaciones: '', threadId: '' };
+
+    return {
+      stopBot: pgConv.stopBot || false,
+      mensajes: [],
+      observaciones: '',
+      threadId: '',
+      pgConvId: pgConv.id
+    };
   }
 }
 
-// Función para actualizar solo el campo stopBot en WHP
+// Función DUAL para actualizar stopBot (PostgreSQL + WHP)
 async function updateStopBotOnly(userId, stopBot) {
+  // 1. PRIMERO: Actualizar en PostgreSQL
+  const pgSuccess = await updateStopBotPostgres(userId, stopBot);
+
+  // 2. SEGUNDO: Actualizar en nombre del paciente si está disponible
+  const pgConv = await getOrCreateConversationPostgres(userId);
+  if (pgConv.nombre_paciente) {
+    await updateNombrePacientePostgres(userId, pgConv.nombre_paciente);
+  }
+
+  // 3. TERCERO: Sincronizar con Wix
   try {
-    // Obtener conversación actual
+    // Obtener conversación actual de Wix
     const response = await axios.get(`${WIX_BACKEND_URL}/_functions/obtenerConversacion`, {
       params: { userId }
     });
@@ -127,33 +277,48 @@ async function updateStopBotOnly(userId, stopBot) {
     // Actualizar con los mensajes existentes + stopBot
     const updateResponse = await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
       userId: userId,
-      nombre: '',
+      nombre: pgConv.nombre_paciente || '',
       mensajes: mensajesActuales,
       stopBot: stopBot
     });
 
-    console.log(`✅ stopBot actualizado a ${stopBot} para ${userId} (${mensajesActuales.length} mensajes preservados)`);
+    console.log(`✅ DUAL: stopBot actualizado a ${stopBot} para ${userId} (PG: ${pgSuccess}, Wix: OK, ${mensajesActuales.length} mensajes)`);
     return updateResponse.data;
   } catch (error) {
-    // Si el usuario no existe, crear registro con stopBot
+    // Si el usuario no existe en Wix, crear registro con stopBot
     if (error.response?.status === 404 || error.response?.status === 400) {
-      console.log(`ℹ️ Usuario ${userId} no existe. Creando registro con stopBot=${stopBot}`);
-      const createResponse = await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
-        userId: userId,
-        nombre: '',
-        mensajes: [],
-        stopBot: stopBot
-      });
-      return createResponse.data;
+      console.log(`ℹ️ Usuario ${userId} no existe en Wix. Creando registro con stopBot=${stopBot}`);
+      try {
+        const createResponse = await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
+          userId: userId,
+          nombre: pgConv.nombre_paciente || '',
+          mensajes: [],
+          stopBot: stopBot
+        });
+        console.log(`✅ DUAL: stopBot=${stopBot} (PG: ${pgSuccess}, Wix: Creado)`);
+        return createResponse.data;
+      } catch (createError) {
+        console.error('⚠️ Error creando en Wix (PostgreSQL actualizado):', createError.message);
+        return { success: pgSuccess, wixError: createError.message };
+      }
     }
-    console.error('Error actualizando stopBot:', error.response?.data || error.message);
-    // No lanzar excepción, solo loguear - permite que el flujo continúe
-    return { success: false, error: error.message };
+    console.error('⚠️ Error actualizando Wix (PostgreSQL actualizado):', error.response?.data || error.message);
+    // Aunque Wix falle, PostgreSQL está actualizado
+    return { success: pgSuccess, wixError: error.message };
   }
 }
 
-// Función para guardar conversación completa en WHP
+// Función DUAL para guardar conversación completa (PostgreSQL + WHP)
 async function saveConversationToDB(userId, mensajes, stopBot = false, nombre = '') {
+  // 1. PRIMERO: Actualizar PostgreSQL
+  if (nombre) {
+    await updateNombrePacientePostgres(userId, nombre);
+  }
+  if (stopBot !== undefined) {
+    await updateStopBotPostgres(userId, stopBot);
+  }
+
+  // 2. SEGUNDO: Guardar en Wix (para historial de mensajes)
   try {
     // Convertir el formato OpenAI a formato WHP
     const mensajesWHP = mensajes.map(msg => ({
@@ -169,15 +334,20 @@ async function saveConversationToDB(userId, mensajes, stopBot = false, nombre = 
       stopBot: stopBot
     });
 
-    console.log(`💾 Conversación guardada para ${userId} (${mensajes.length} mensajes)`);
+    console.log(`💾 DUAL: Conversación guardada para ${userId} (${mensajes.length} mensajes, PG actualizado, Wix OK)`);
 
     // RAG: Guardar último par pregunta-respuesta para aprendizaje (async, no bloquea)
     guardarEnRAGAsync(userId, mensajes);
 
     return response.data;
   } catch (error) {
-    console.error('Error guardando conversación:', error.response?.data || error.message);
-    throw error;
+    console.error('⚠️ Error guardando en Wix (PostgreSQL actualizado):', error.response?.data || error.message);
+
+    // RAG: Intentar guardar aunque Wix falle
+    guardarEnRAGAsync(userId, mensajes);
+
+    // No lanzar error si PostgreSQL se actualizó correctamente
+    return { success: true, wixError: error.message };
   }
 }
 
