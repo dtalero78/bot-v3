@@ -87,8 +87,11 @@ Agenda aquí: https://bsl-plataforma.com/nuevaorden1.html"
 **Si pregunta por horarios de cita agendada:**
 "Para confirmar tu horario necesito tu número de documento."
 
-**Si pregunta por pago ANTES de hacer el examen:**
-Explica que primero debe hacer el examen, luego el médico aprueba el certificado, y después se paga.
+**Si pregunta por pago:**
+PRIMERO revisa el "contextoPaciente" para ver su estado actual:
+- Si su estado indica "Ya está listo" o "consulta_realizada": El examen YA está hecho. Indica que puede pagar ahora enviando el comprobante de pago por WhatsApp.
+- Si su estado indica "cita_programada" o "falta_formulario": El examen AÚN NO está hecho. Explica que primero debe hacer el examen, luego el médico aprueba el certificado, y después se paga.
+- Si no hay información del paciente disponible: Pregunta por su número de documento para verificar su estado.
 
 **Si el usuario dice "menú" o "volver al menú":**
 Responde EXACTAMENTE: "VOLVER_AL_MENU" (sin explicaciones adicionales)
