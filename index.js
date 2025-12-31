@@ -1103,11 +1103,19 @@ Por favor envía el comprobante de pago cuando completes la transferencia.`;
         contextoPaciente = `\n\n📋 INFORMACIÓN DEL PACIENTE (identificado automáticamente por su celular):
 - Nombre: ${estadoPaciente.nombre}
 - Cédula: ${pacientePorCelular.numeroId}
-- Empresa: ${estadoPaciente.empresa || 'No especificada'}
+- Empresa: ${pacientePorCelular.empresa || 'No especificada'}
 - Estado actual: ${estadoPaciente.estado}
+- Estado detallado: ${estadoPaciente.estadoDetalle}
 - Tiene formulario diligenciado: ${estadoPaciente.tieneFormulario ? 'Sí' : 'No'}
+- Fecha de atención: ${estadoPaciente.fechaAtencion ? new Date(estadoPaciente.fechaAtencion).toLocaleDateString('es-CO') : 'No registrada'}
+- Fecha de consulta: ${estadoPaciente.fechaConsulta ? new Date(estadoPaciente.fechaConsulta).toLocaleDateString('es-CO') : 'No realizada'}
 
-Usa esta información para dar respuestas personalizadas según en qué punto del flujo se encuentra.`;
+IMPORTANTE: Usa el "Estado detallado" para saber exactamente en qué punto está:
+- "consulta_realizada" = Ya hizo el examen, puede pagar
+- "cita_programada" = Tiene cita pendiente, aún no hace examen
+- "falta_formulario" = Falta diligenciar formulario
+- "no_realizo_consulta" = No asistió a la cita
+- "no_asistio_consulta" = Diligenció formulario pero no fue a consulta`;
 
         console.log(`📊 Estado del paciente: ${estadoPaciente.estado}`);
       }
