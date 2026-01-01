@@ -46,9 +46,6 @@ const openai = new OpenAI({
 const WHAPI_BASE_URL = 'https://gate.whapi.cloud';
 const WHAPI_TOKEN = process.env.WHAPI_KEY;
 
-// Configuración de Wix Backend
-const WIX_BACKEND_URL = process.env.WIX_BACKEND_URL;
-
 // Número del administrador
 const ADMIN_NUMBER = process.env.ADMIN_NUMBER;
 
@@ -243,31 +240,11 @@ async function getConversationFromDB(userId) {
   // Obtener/crear en PostgreSQL
   const pgConv = await getOrCreateConversationPostgres(userId);
 
-  // Intentar obtener mensajes de Wix (mantener temporalmente para RAG)
-  let mensajes = [];
-  let threadId = '';
-
-  try {
-    const response = await axios.get(`${WIX_BACKEND_URL}/_functions/obtenerConversacion`, {
-      params: { userId }
-    });
-
-    if (response.data) {
-      mensajes = response.data.mensajes || [];
-      threadId = response.data.threadId || '';
-    }
-  } catch (error) {
-    // Si Wix falla, continuar con datos vacíos
-    if (error.response?.status !== 404 && error.response?.status !== 400) {
-      console.error('⚠️ Error consultando Wix (continuando):', error.message);
-    }
-  }
-
   return {
     stopBot: pgConv.stopBot || false,
-    mensajes: mensajes,
+    mensajes: [], // Se construyen localmente en línea 1109
     observaciones: '',
-    threadId: threadId,
+    threadId: '',
     pgConvId: pgConv.id
   };
 }
@@ -289,9 +266,12 @@ async function updateStopBotOnly(userId, stopBot) {
   return { success: pgSuccess };
 }
 
-// Función DUAL para guardar conversación completa (PostgreSQL + WHP)
+/**
+ * OPTIMIZADO: Guardar conversación SOLO en PostgreSQL
+ * Eliminada sincronización con Wix completamente
+ */
 async function saveConversationToDB(userId, mensajes, stopBot = false, nombre = '') {
-  // 1. PRIMERO: Actualizar PostgreSQL
+  // Actualizar PostgreSQL
   if (nombre) {
     await updateNombrePacientePostgres(userId, nombre);
   }
@@ -299,37 +279,12 @@ async function saveConversationToDB(userId, mensajes, stopBot = false, nombre = 
     await updateStopBotPostgres(userId, stopBot);
   }
 
-  // 2. SEGUNDO: Guardar en Wix (para historial de mensajes)
-  try {
-    // Convertir el formato OpenAI a formato WHP
-    const mensajesWHP = mensajes.map(msg => ({
-      from: msg.role === 'user' ? 'usuario' : 'bot',
-      mensaje: msg.content,
-      timestamp: new Date().toISOString()
-    }));
+  console.log(`💾 Conversación guardada: ${userId} (${mensajes.length} mensajes)`);
 
-    const response = await axios.post(`${WIX_BACKEND_URL}/_functions/guardarConversacion`, {
-      userId: userId,
-      nombre: nombre,
-      mensajes: mensajesWHP,
-      stopBot: stopBot
-    });
+  // RAG: Guardar último par pregunta-respuesta para aprendizaje (async, no bloquea)
+  guardarEnRAGAsync(userId, mensajes);
 
-    console.log(`💾 DUAL: Conversación guardada para ${userId} (${mensajes.length} mensajes, PG actualizado, Wix OK)`);
-
-    // RAG: Guardar último par pregunta-respuesta para aprendizaje (async, no bloquea)
-    guardarEnRAGAsync(userId, mensajes);
-
-    return response.data;
-  } catch (error) {
-    console.error('⚠️ Error guardando en Wix (PostgreSQL actualizado):', error.response?.data || error.message);
-
-    // RAG: Intentar guardar aunque Wix falle
-    guardarEnRAGAsync(userId, mensajes);
-
-    // No lanzar error si PostgreSQL se actualizó correctamente
-    return { success: true, wixError: error.message };
-  }
+  return { success: true };
 }
 
 // Función auxiliar para guardar en RAG de forma asíncrona
@@ -418,41 +373,51 @@ Responde solo con una de las dos opciones, sin explicación adicional.`
   }
 }
 
-// Buscar paciente por número de celular (WhatsApp)
+/**
+ * OPTIMIZADO: Buscar paciente por celular en PostgreSQL
+ * Eliminada consulta a Wix - usa HistoriaClinica en PostgreSQL
+ */
 async function buscarPacientePorCelular(celular) {
   try {
     // Limpiar el número: quitar código de país 57 y caracteres no numéricos
     const celularLimpio = celular.replace(/\D/g, '').replace(/^57/, '');
 
-    const response = await axios.get(`${WIX_BACKEND_URL}/_functions/historiaClinicaPorCelular`, {
-      params: {
-        celular: celularLimpio
-      }
-    });
+    // Buscar en PostgreSQL
+    const result = await pool.query(`
+      SELECT "_id", "numeroId", "primerNombre", "primerApellido", "celular",
+             "fechaAtencion", "fechaConsulta", "empresa"
+      FROM "HistoriaClinica"
+      WHERE "celular" = $1
+      ORDER BY "fechaAtencion" DESC
+      LIMIT 1
+    `, [celularLimpio]);
 
-    if (response.data && response.data.success) {
+    if (result.rows.length > 0) {
+      const paciente = result.rows[0];
       return {
         success: true,
-        numeroId: response.data.numeroId,
-        nombre: `${response.data.primerNombre || ''} ${response.data.primerApellido || ''}`.trim(),
-        celular: response.data.celular,
-        fechaAtencion: response.data.fechaAtencion,
-        fechaConsulta: response.data.fechaConsulta,
-        empresa: response.data.empresa,
-        _id: response.data._id
+        numeroId: paciente.numeroId,
+        nombre: `${paciente.primerNombre || ''} ${paciente.primerApellido || ''}`.trim(),
+        celular: paciente.celular,
+        fechaAtencion: paciente.fechaAtencion,
+        fechaConsulta: paciente.fechaConsulta,
+        empresa: paciente.empresa,
+        _id: paciente._id
       };
     } else {
       return { success: false, message: 'No se encontró paciente con ese celular' };
     }
   } catch (error) {
-    console.error('Error buscando paciente por celular:', error.response?.data || error.message);
+    console.error('Error buscando paciente por celular:', error.message);
     return { success: false, message: 'Error al buscar paciente por celular' };
   }
 }
 
-// Consultar cita en HistoriaClinica por número de documento (PostgreSQL + Wix fallback)
+/**
+ * OPTIMIZADO: Consultar cita SOLO en PostgreSQL
+ * Eliminado fallback a Wix - ya no es necesario
+ */
 async function consultarCita(numeroDocumento) {
-  // 1. Buscar primero en PostgreSQL
   try {
     const result = await pool.query(`
       SELECT "_id", "primerNombre", "segundoNombre", "primerApellido", "segundoApellido",
@@ -465,7 +430,7 @@ async function consultarCita(numeroDocumento) {
 
     if (result.rows.length > 0) {
       const paciente = result.rows[0];
-      console.log(`✅ Cita encontrada en PostgreSQL para ${numeroDocumento}`);
+      console.log(`✅ Cita encontrada para ${numeroDocumento}`);
       return {
         success: true,
         paciente: {
@@ -476,55 +441,21 @@ async function consultarCita(numeroDocumento) {
         }
       };
     }
-    console.log(`🔍 No encontrado en PostgreSQL, buscando en Wix para ${numeroDocumento}...`);
+
+    return { success: false, message: 'No se encontró información para ese número de documento' };
   } catch (error) {
-    console.error('Error consultando cita en PostgreSQL:', error.message);
+    console.error('Error consultando cita:', error.message);
+    return { success: false, message: 'Error consultando cita' };
   }
-
-  // 2. Fallback: Buscar en Wix
-  try {
-    const wixUrl = `${WIX_BACKEND_URL}/_functions/historiaClinicaPorNumeroId`;
-    console.log(`🌐 Consultando Wix: ${wixUrl}?numeroId=${numeroDocumento}`);
-
-    const wixResponse = await axios.get(wixUrl, {
-      params: { numeroId: numeroDocumento }
-    });
-
-    console.log(`🌐 Respuesta Wix status: ${wixResponse.status}`);
-    console.log(`🌐 Respuesta Wix data keys: ${Object.keys(wixResponse.data || {})}`);
-
-    if (wixResponse.data && wixResponse.data.data) {
-      const paciente = wixResponse.data.data;
-      console.log(`✅ Cita encontrada en Wix para ${numeroDocumento}: ${paciente.primerNombre} ${paciente.primerApellido}`);
-      return {
-        success: true,
-        paciente: {
-          nombre: `${paciente.primerNombre || ''} ${paciente.primerApellido || ''}`.trim(),
-          fechaAtencion: paciente.fechaAtencion,
-          celular: paciente.celular,
-          empresa: paciente.empresa
-        }
-      };
-    } else {
-      console.log(`⚠️ Wix respondió pero sin data para ${numeroDocumento}`);
-    }
-  } catch (error) {
-    console.log(`❌ Error consultando Wix para ${numeroDocumento}:`, error.response?.status || error.message);
-    if (error.response?.data) {
-      console.log(`❌ Wix error data:`, JSON.stringify(error.response.data));
-    }
-  }
-
-  return { success: false, message: 'No se encontró información para ese número de documento' };
 }
 
-// Consultar estado completo del paciente (PostgreSQL + Wix fallback + FORMULARIO en Wix)
+/**
+ * OPTIMIZADO: Consultar estado completo del paciente SOLO en PostgreSQL
+ * Eliminados fallbacks a Wix - usa HistoriaClinica y formularios en PostgreSQL
+ */
 async function consultarEstadoPaciente(numeroDocumento) {
   try {
-    let paciente = null;
-    let fuenteDatos = '';
-
-    // 1. Buscar primero en HistoriaClinica (PostgreSQL)
+    // 1. Buscar en HistoriaClinica (PostgreSQL)
     const result = await pool.query(`
       SELECT "_id", "primerNombre", "segundoNombre", "primerApellido", "segundoApellido",
              "celular", "empresa", "fechaAtencion", "fechaConsulta", "ciudad"
@@ -534,50 +465,13 @@ async function consultarEstadoPaciente(numeroDocumento) {
       LIMIT 1
     `, [numeroDocumento]);
 
-    if (result.rows.length > 0) {
-      paciente = result.rows[0];
-      fuenteDatos = 'PostgreSQL';
-      console.log(`✅ Paciente encontrado en PostgreSQL para ${numeroDocumento}`);
-    } else {
-      // 2. Fallback: Buscar en Wix
-      console.log(`🔍 No encontrado en PostgreSQL, buscando en Wix para ${numeroDocumento}...`);
-      try {
-        const wixUrl = `${WIX_BACKEND_URL}/_functions/historiaClinicaPorNumeroId`;
-        console.log(`🌐 Consultando Wix: ${wixUrl}?numeroId=${numeroDocumento}`);
-
-        const wixResponse = await axios.get(wixUrl, {
-          params: { numeroId: numeroDocumento }
-        });
-
-        console.log(`🌐 Respuesta Wix status: ${wixResponse.status}`);
-
-        if (wixResponse.data && wixResponse.data.data) {
-          const wixPaciente = wixResponse.data.data;
-          paciente = {
-            _id: wixPaciente._id,
-            primerNombre: wixPaciente.primerNombre,
-            segundoNombre: wixPaciente.segundoNombre,
-            primerApellido: wixPaciente.primerApellido,
-            segundoApellido: wixPaciente.segundoApellido,
-            celular: wixPaciente.celular,
-            empresa: wixPaciente.empresa,
-            fechaAtencion: wixPaciente.fechaAtencion,
-            fechaConsulta: wixPaciente.fechaConsulta,
-            ciudad: wixPaciente.ciudad
-          };
-          fuenteDatos = 'Wix';
-          console.log(`✅ Paciente encontrado en Wix para ${numeroDocumento}: ${paciente.primerNombre} ${paciente.primerApellido}`);
-        }
-      } catch (wixError) {
-        console.log(`❌ Error consultando Wix para ${numeroDocumento}:`, wixError.response?.status || wixError.message);
-      }
-    }
-
-    if (!paciente) {
+    if (result.rows.length === 0) {
       return { success: false, message: 'No se encontró información para ese número de documento' };
     }
 
-    console.log(`📊 Usando datos de ${fuenteDatos} para ${numeroDocumento}`);
+    const paciente = result.rows[0];
+    console.log(`✅ Paciente encontrado para ${numeroDocumento}`);
+
     const historiaId = paciente._id;
     const nombre = `${paciente.primerNombre || ''} ${paciente.primerApellido || ''}`.trim();
     const ciudad = paciente.ciudad || '';
@@ -585,19 +479,19 @@ async function consultarEstadoPaciente(numeroDocumento) {
     const fechaConsulta = paciente.fechaConsulta ? new Date(paciente.fechaConsulta) : null;
     const ahora = new Date();
 
-    // 2. Buscar en FORMULARIO usando el _id de HistoriaClinica (aún en Wix)
+    // 2. Buscar en formularios usando wix_id (equivalente a _id de HistoriaClinica)
     let tieneFormulario = false;
     try {
-      const formularioResponse = await axios.get(`${WIX_BACKEND_URL}/_functions/formularioPorIdGeneral`, {
-        params: {
-          idGeneral: historiaId
-        }
-      });
-      console.log(`🔍 DEBUG formulario response para ${numeroDocumento}:`, JSON.stringify(formularioResponse.data));
-      tieneFormulario = formularioResponse.data?.success === true;
-      console.log(`🔍 DEBUG tieneFormulario = ${tieneFormulario}`);
+      const formularioResult = await pool.query(`
+        SELECT id FROM formularios
+        WHERE wix_id = $1
+        LIMIT 1
+      `, [historiaId]);
+
+      tieneFormulario = formularioResult.rows.length > 0;
+      console.log(`🔍 tieneFormulario = ${tieneFormulario} (${formularioResult.rows.length} registros)`);
     } catch (error) {
-      console.log(`ℹ️ No se encontró formulario para ${numeroDocumento}`, error.message);
+      console.log(`ℹ️ Error consultando formulario para ${numeroDocumento}:`, error.message);
       tieneFormulario = false;
     }
 
