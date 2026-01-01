@@ -1,0 +1,294 @@
+═══════════════════════════════════════════════════════════════════
+  MIGRACIÓN WHP: De Wix a PostgreSQL - INSTRUCCIONES COMPLETAS
+═══════════════════════════════════════════════════════════════════
+
+📋 RESUMEN:
+-----------
+Migrar 34,000 registros de la colección WHP de Wix a PostgreSQL
+para sincronizar el estado stopBot de conversaciones WhatsApp.
+
+📁 ARCHIVOS CREADOS:
+--------------------
+✅ /Users/danieltalero/BOTV3/bot-v3/migracion-whp.js
+   → Script de migración (listo para usar)
+
+✅ /Users/danieltalero/BOTV3/bot-v3/MIGRACION_WHP.md
+   → Documentación completa de la migración
+
+✅ /Users/danieltalero/BOTV3/bot-v3/INSTRUCCIONES_MIGRACION_WHP.txt
+   → Este archivo (guía rápida)
+
+═══════════════════════════════════════════════════════════════════
+  PASO 1: CREAR ENDPOINT EN WIX
+═══════════════════════════════════════════════════════════════════
+
+⚠️ CRÍTICO: Debes agregar código a tu proyecto Wix antes de ejecutar
+           la migración.
+
+Archivos a modificar en Wix:
+-----------------------------
+
+1️⃣ backend/exposeDataBase.js
+   → Agrega la función exportarWHP()
+
+2️⃣ backend/http-functions.js
+   → Agrega el endpoint get_exportarWHP()
+
+💡 El código completo está en: MIGRACION_WHP.md (sección "Código a Agregar en Wix")
+
+📝 CÓDIGO RESUMIDO PARA WIX:
+----------------------------
+
+// En backend/exposeDataBase.js:
+export async function exportarWHP(skip = 0, limit = 500) {
+    const limitNum = Math.min(Math.max(1, limit), 1000);
+    const skipNum = Math.max(0, skip);
+
+    let query = wixData.query("WHP")
+        .skip(skipNum)
+        .limit(limitNum);
+
+    const results = await query.find();
+
+    const items = results.items.map(item => ({
+        _id: item._id,
+        userId: item.userId,
+        nombre: item.nombre || null,
+        stopBot: item.stopBot === true,
+        _createdDate: item._createdDate,
+        _updatedDate: item._updatedDate
+    }));
+
+    return {
+        success: true,
+        items: items,
+        count: items.length,
+        totalCount: results.totalCount,
+        skip: skipNum,
+        hasMore: (skipNum + items.length) < results.totalCount,
+        nextSkip: skipNum + items.length
+    };
+}
+
+// En backend/http-functions.js:
+export async function get_exportarWHP(request) {
+    const { skip = '0', limit = '500' } = request.query;
+    const skipNum = parseInt(skip, 10);
+    const limitNum = parseInt(limit, 10);
+
+    const resultado = await exportarWHP(skipNum, limitNum);
+
+    return {
+        body: resultado,
+        headers: { "Content-Type": "application/json" },
+        status: 200
+    };
+}
+
+🚀 Después de agregar el código: PUBLICA TU SITIO WIX
+
+═══════════════════════════════════════════════════════════════════
+  PASO 2: PROBAR ENDPOINT
+═══════════════════════════════════════════════════════════════════
+
+Una vez publicado Wix, prueba que el endpoint funciona:
+
+curl "https://www.bsl.com.co/_functions/exportarWHP?skip=0&limit=10"
+
+✅ Respuesta esperada:
+{
+  "success": true,
+  "items": [...],
+  "count": 10,
+  "totalCount": 34000,
+  ...
+}
+
+❌ Si obtienes error 404:
+   → El endpoint no fue agregado o no se publicó Wix
+   → Vuelve al PASO 1
+
+═══════════════════════════════════════════════════════════════════
+  PASO 3: EJECUTAR MIGRACIÓN
+═══════════════════════════════════════════════════════════════════
+
+3.1 MODO PRUEBA (Primero ejecuta esto):
+----------------------------------------
+cd /Users/danieltalero/BOTV3/bot-v3
+node migracion-whp.js --test
+
+Esto procesa solo 1000 registros para verificar que todo funciona.
+
+✅ Si sale todo bien:
+   ✓ Verás estadísticas de migración
+   ✓ Conteo de registros insertados
+   ✓ Sin errores
+
+❌ Si hay errores:
+   → Verifica que el endpoint de Wix funciona (PASO 2)
+   → Revisa los logs del script
+   → Consulta MIGRACION_WHP.md sección "Troubleshooting"
+
+
+3.2 MIGRACIÓN COMPLETA:
+-----------------------
+node migracion-whp.js
+
+⏱️ Duración estimada: 5-10 minutos (34,000 registros)
+
+El script:
+- Procesa en lotes de 500 registros
+- Reintentos automáticos si falla
+- Pausa de 3 segundos entre lotes
+- Muestra progreso en tiempo real
+
+═══════════════════════════════════════════════════════════════════
+  PASO 4: VERIFICAR RESULTADOS
+═══════════════════════════════════════════════════════════════════
+
+node migracion-whp.js --verify
+
+Esto muestra:
+✓ Total de registros en Wix WHP
+✓ Total de registros en PostgreSQL
+✓ Registros con stopBot=true
+✓ Muestra de últimos 10 registros
+
+Si los conteos NO coinciden:
+→ Ejecuta de nuevo: node migracion-whp.js
+→ El script usa UPSERT, no duplicará datos
+
+═══════════════════════════════════════════════════════════════════
+  MAPEO DE DATOS
+═══════════════════════════════════════════════════════════════════
+
+Campo Wix          →  Campo PostgreSQL
+-----------------     ---------------------
+userId             →  celular (clave única)
+nombre             →  nombre_paciente
+stopBot            →  stopBot
+_id                →  wix_whp_id
+_createdDate       →  fecha_inicio
+_updatedDate       →  fecha_ultima_actividad
+
+Campos adicionales en PostgreSQL:
+- estado: 'migrada'
+- canal: 'bot'
+- bot_activo: !stopBot (inverso de stopBot)
+- origen: 'WIX'
+
+═══════════════════════════════════════════════════════════════════
+  OPCIONES DEL SCRIPT
+═══════════════════════════════════════════════════════════════════
+
+--test          Solo procesar 1000 registros (modo prueba)
+--dry-run       Simular sin hacer cambios reales
+--verify        Solo verificar conteos
+--skip=N        Continuar desde registro N (si se interrumpió)
+
+Ejemplos:
+---------
+node migracion-whp.js --test                # Modo prueba
+node migracion-whp.js --dry-run             # Ver qué haría
+node migracion-whp.js                       # Migración completa
+node migracion-whp.js --verify              # Verificar después
+node migracion-whp.js --skip=10000          # Continuar desde 10000
+
+═══════════════════════════════════════════════════════════════════
+  TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════
+
+❌ Error: "ENOTFOUND" o "404 Not Found"
+   Solución:
+   → Verifica que el endpoint existe en Wix
+   → Prueba con curl (PASO 2)
+   → Asegúrate de haber publicado Wix
+
+❌ Error: "504 Gateway Timeout"
+   Solución:
+   → El endpoint de Wix tarda mucho
+   → Edita migracion-whp.js línea 36: cambia BATCH_SIZE a 200
+   → El script reintenta automáticamente
+
+❌ Error: "duplicate key value"
+   Solución:
+   → No debería pasar con UPSERT
+   → El script actualiza registros existentes
+   → Si persiste, contacta soporte
+
+❌ Faltan registros después de migración
+   Solución:
+   → Ejecuta: node migracion-whp.js --verify
+   → Si faltan registros, ejecuta de nuevo: node migracion-whp.js
+   → El script NO duplica, usa UPSERT
+
+═══════════════════════════════════════════════════════════════════
+  VERIFICACIÓN POST-MIGRACIÓN
+═══════════════════════════════════════════════════════════════════
+
+Consultas SQL útiles:
+
+-- Conteo total
+SELECT COUNT(*) FROM conversaciones_whatsapp;
+
+-- Registros con stopBot=true
+SELECT COUNT(*) FROM conversaciones_whatsapp WHERE "stopBot" = true;
+
+-- Registros migrados desde Wix
+SELECT COUNT(*) FROM conversaciones_whatsapp WHERE origen = 'WIX';
+
+-- Últimos 10 registros
+SELECT celular, nombre_paciente, "stopBot", estado
+FROM conversaciones_whatsapp
+ORDER BY fecha_ultima_actividad DESC
+LIMIT 10;
+
+-- Verificar duplicados (no debería haber)
+SELECT celular, COUNT(*) as count
+FROM conversaciones_whatsapp
+GROUP BY celular
+HAVING COUNT(*) > 1;
+
+═══════════════════════════════════════════════════════════════════
+  IMPORTANTE
+═══════════════════════════════════════════════════════════════════
+
+⚠️ NOTAS CRÍTICAS:
+
+1. NO SE MIGRAN MENSAJES
+   Solo se transfieren: celular, nombre y stopBot
+   Los mensajes permanecen en Wix (colección WHP)
+
+2. stopBot ES CRÍTICO
+   Este campo controla si el bot responde o no
+   La migración preserva este estado
+
+3. UPSERT POR CELULAR
+   Si un celular ya existe, se actualiza su stopBot
+   NO se crean duplicados
+
+4. EJECUCIÓN SEGURA
+   Puedes ejecutar el script múltiples veces
+   Usa UPSERT (INSERT or UPDATE), no duplica datos
+
+5. SIN RIESGO
+   La migración NO modifica ni elimina datos en Wix
+   Solo lee de Wix y escribe/actualiza en PostgreSQL
+
+═══════════════════════════════════════════════════════════════════
+  RESUMEN DE PASOS
+═══════════════════════════════════════════════════════════════════
+
+□ 1. Agregar código a Wix (backend/exposeDataBase.js y http-functions.js)
+□ 2. Publicar sitio Wix
+□ 3. Probar endpoint: curl "https://www.bsl.com.co/_functions/exportarWHP?skip=0&limit=10"
+□ 4. Ejecutar modo prueba: node migracion-whp.js --test
+□ 5. Ejecutar migración completa: node migracion-whp.js
+□ 6. Verificar resultados: node migracion-whp.js --verify
+□ 7. Verificar con SQL (queries arriba)
+
+═══════════════════════════════════════════════════════════════════
+
+📖 DOCUMENTACIÓN COMPLETA: Ver MIGRACION_WHP.md
+
+✅ ¡Listo para migrar 34,000 registros!

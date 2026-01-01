@@ -695,3 +695,364 @@ export async function obtenerConversacionesTwilioPorCelular(celular) {
         };
     }
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// FUNCIONES PARA INFORME DE CONDICIONES DE SALUD
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Obtiene registros de HistoriaClinica por codEmpresa y rango de fechas
+ * @param {string} codEmpresa - Código de la empresa
+ * @param {string} fechaInicio - Fecha de inicio en formato YYYY-MM-DD
+ * @param {string} fechaFin - Fecha de fin en formato YYYY-MM-DD
+ * @returns {Promise<Object>} - Lista de IDs de HistoriaClinica
+ */
+export async function obtenerHistoriaClinicaPorEmpresa(codEmpresa, fechaInicio, fechaFin) {
+    try {
+        console.log(`📊 Obteniendo HistoriaClinica para empresa: ${codEmpresa}, desde ${fechaInicio} hasta ${fechaFin}`);
+
+        // Crear fechas en hora local de Colombia (UTC-5)
+        const inicio = new Date(`${fechaInicio}T00:00:00-05:00`);
+        const fin = new Date(`${fechaFin}T23:59:59-05:00`);
+
+        console.log(`🕐 Rango UTC: ${inicio.toISOString()} hasta ${fin.toISOString()}`);
+
+        // Paginación para obtener TODOS los registros (Wix tiene límite de 1000 por query)
+        let allItems = [];
+        let hasMore = true;
+        let skip = 0;
+        const pageSize = 1000;
+
+        while (hasMore) {
+            const result = await wixData.query("HistoriaClinica")
+                .eq("codEmpresa", codEmpresa)
+                .ge("fechaAtencion", inicio)
+                .le("fechaAtencion", fin)
+                .limit(pageSize)
+                .skip(skip)
+                .find();
+
+            allItems = allItems.concat(result.items);
+            console.log(`📄 Página obtenida: ${result.items.length} registros (skip: ${skip})`);
+
+            hasMore = result.items.length === pageSize;
+            skip += pageSize;
+
+            // Seguridad: evitar loops infinitos
+            if (skip > 50000) {
+                console.warn("⚠️ Límite de seguridad alcanzado (50000 registros)");
+                break;
+            }
+        }
+
+        console.log(`✅ Total de registros de HistoriaClinica obtenidos: ${allItems.length}`);
+
+        // Extraer solo los _id para usar en la consulta de FORMULARIO
+        const historiaIds = allItems.map(item => item._id);
+
+        return {
+            success: true,
+            total: allItems.length,
+            historiaIds: historiaIds,
+            items: allItems
+        };
+    } catch (error) {
+        console.error("❌ Error obteniendo HistoriaClinica por empresa:", error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+}
+
+/**
+ * Obtiene registros de FORMULARIO por array de IDs usando hasSome
+ * @param {Array<string>} ids - Array de IDs de HistoriaClinica (idGeneral)
+ * @returns {Promise<Object>} - Lista de formularios
+ */
+export async function obtenerFormulariosPorIds(ids) {
+    try {
+        console.log(`📋 Obteniendo FORMULARIO para ${ids.length} IDs`);
+
+        if (!ids || ids.length === 0) {
+            return {
+                success: true,
+                total: 0,
+                items: []
+            };
+        }
+
+        // Wix hasSome tiene un límite de 100 valores por consulta
+        // Dividir en chunks de 100
+        const chunkSize = 100;
+        let allItems = [];
+
+        for (let i = 0; i < ids.length; i += chunkSize) {
+            const chunk = ids.slice(i, i + chunkSize);
+
+            const result = await wixData.query("FORMULARIO")
+                .hasSome("idGeneral", chunk)
+                .limit(1000)
+                .find();
+
+            allItems = allItems.concat(result.items);
+            console.log(`📄 Chunk ${Math.floor(i / chunkSize) + 1}: ${result.items.length} formularios encontrados`);
+        }
+
+        console.log(`✅ Total de FORMULARIO obtenidos: ${allItems.length}`);
+
+        return {
+            success: true,
+            total: allItems.length,
+            items: allItems
+        };
+    } catch (error) {
+        console.error("❌ Error obteniendo FORMULARIO por IDs:", error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// FUNCIONES DE MIGRACIÓN - EXPORTAR TODA LA BASE DE DATOS
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Exporta todos los registros de WHP (conversaciones WhatsApp) con paginación
+ * @param {number} skip - Número de registros a saltar
+ * @param {number} limit - Número de registros a obtener (máx 1000)
+ * @returns {Promise<Object>} - items, totalCount, hasMore
+ */
+export async function exportarWHP(skip = 0, limit = 500) {
+    try {
+        console.log(`📤 Exportando WHP - skip: ${skip}, limit: ${limit}`);
+
+        // Validar límites
+        const limitNum = Math.min(Math.max(1, limit), 1000);
+        const skipNum = Math.max(0, skip);
+
+        // Query para contar total
+        const countResult = await wixData.query("WHP").limit(1).find();
+        const totalCount = countResult.totalCount;
+
+        // Query para obtener datos
+        const result = await wixData.query("WHP")
+            .ascending("_createdDate")
+            .skip(skipNum)
+            .limit(limitNum)
+            .find();
+
+        // Mapear items solo con campos necesarios para migración
+        const items = result.items.map(item => ({
+            _id: item._id,
+            userId: item.userId,
+            nombre: item.nombre || null,
+            stopBot: item.stopBot === true,
+            _createdDate: item._createdDate,
+            _updatedDate: item._updatedDate
+        }));
+
+        const hasMore = (skipNum + items.length) < totalCount;
+
+        console.log(`✅ Exportados ${items.length} de ${totalCount} registros WHP. HasMore: ${hasMore}`);
+
+        return {
+            success: true,
+            items: items,
+            count: items.length,
+            totalCount: totalCount,
+            skip: skipNum,
+            hasMore: hasMore,
+            nextSkip: hasMore ? skipNum + items.length : null
+        };
+    } catch (error) {
+        console.error("❌ Error exportando WHP:", error);
+        return {
+            success: false,
+            error: error.message,
+            items: [],
+            count: 0,
+            totalCount: 0,
+            skip: skip,
+            hasMore: false
+        };
+    }
+}
+
+/**
+ * Exporta todos los registros de HistoriaClinica con paginación
+ * @param {number} skip - Número de registros a saltar
+ * @param {number} limit - Número de registros a obtener (máx 1000)
+ * @returns {Promise<Object>} - items, totalCount, hasMore
+ */
+export async function exportarTodaHistoriaClinica(skip = 0, limit = 1000, desde = null) {
+    try {
+        console.log(`📤 Exportando HistoriaClinica - skip: ${skip}, limit: ${limit}, desde: ${desde || 'todos'}`);
+
+        // Limitar a máximo 1000 por restricción de Wix
+        const pageSize = Math.min(limit, 1000);
+
+        // Query base
+        let query = wixData.query("HistoriaClinica");
+
+        // Filtrar por fecha si se especifica
+        if (desde) {
+            const fechaDesde = new Date(desde);
+            query = query.ge("_createdDate", fechaDesde);
+        }
+
+        // Primero obtenemos el total count
+        const countResult = await query.limit(1).find();
+        const totalCount = countResult.totalCount;
+
+        // Luego obtenemos los items con paginación
+        let dataQuery = wixData.query("HistoriaClinica");
+        if (desde) {
+            const fechaDesde = new Date(desde);
+            dataQuery = dataQuery.ge("_createdDate", fechaDesde);
+        }
+
+        const result = await dataQuery
+            .ascending("_createdDate") // Ordenar para consistencia
+            .skip(skip)
+            .limit(pageSize)
+            .find();
+
+        const hasMore = (skip + result.items.length) < totalCount;
+
+        console.log(`✅ Exportados ${result.items.length} registros. Total: ${totalCount}. HasMore: ${hasMore}`);
+
+        return {
+            success: true,
+            items: result.items,
+            count: result.items.length,
+            totalCount: totalCount,
+            skip: skip,
+            hasMore: hasMore,
+            nextSkip: hasMore ? skip + result.items.length : null
+        };
+    } catch (error) {
+        console.error("❌ Error exportando HistoriaClinica:", error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+}
+
+/**
+ * Exporta todos los registros de FORMULARIO con paginación
+ * @param {number} skip - Número de registros a saltar
+ * @param {number} limit - Número de registros a obtener (máx 1000)
+ * @param {string} desde - Fecha mínima de _createdDate (opcional, formato YYYY-MM-DD)
+ * @returns {Promise<Object>} - items, totalCount, hasMore
+ */
+export async function exportarTodoFormulario(skip = 0, limit = 1000, desde = null) {
+    try {
+        console.log(`📤 Exportando FORMULARIO - skip: ${skip}, limit: ${limit}, desde: ${desde || 'todos'}`);
+
+        // Limitar a máximo 1000 por restricción de Wix
+        const pageSize = Math.min(limit, 1000);
+
+        // Query base
+        let query = wixData.query("FORMULARIO");
+
+        // Filtrar por fecha si se especifica
+        if (desde) {
+            const fechaDesde = new Date(desde);
+            query = query.ge("_createdDate", fechaDesde);
+        }
+
+        // Primero obtenemos el total count
+        const countResult = await query.limit(1).find();
+        const totalCount = countResult.totalCount;
+
+        // Luego obtenemos los items con paginación
+        let dataQuery = wixData.query("FORMULARIO");
+        if (desde) {
+            const fechaDesde = new Date(desde);
+            dataQuery = dataQuery.ge("_createdDate", fechaDesde);
+        }
+
+        const result = await dataQuery
+            .ascending("_createdDate") // Ordenar para consistencia
+            .skip(skip)
+            .limit(pageSize)
+            .find();
+
+        const hasMore = (skip + result.items.length) < totalCount;
+
+        console.log(`✅ Exportados ${result.items.length} registros FORMULARIO. Total: ${totalCount}. HasMore: ${hasMore}`);
+
+        return {
+            success: true,
+            items: result.items,
+            count: result.items.length,
+            totalCount: totalCount,
+            skip: skip,
+            hasMore: hasMore,
+            nextSkip: hasMore ? skip + result.items.length : null
+        };
+    } catch (error) {
+        console.error("❌ Error exportando FORMULARIO:", error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+}
+
+
+// FUNCIÓN PARA EXPORTAR TODOS LOS REGISTROS DE ADCTEST (PARA MIGRACIÓN)
+export async function exportarADCTEST(skip = 0, limit = 1000, desde = null) {
+    try {
+        console.log(`📦 Exportando ADCTEST: skip=${skip}, limit=${limit}, desde=${desde}`);
+
+        // Query para contar total
+        let countQuery = wixData.query("ADCTEST");
+        if (desde) {
+            const fechaDesde = new Date(desde);
+            countQuery = countQuery.ge("_createdDate", fechaDesde);
+        }
+        const countResult = await countQuery.limit(1).find();
+        const totalCount = countResult.totalCount;
+
+        // Query para obtener datos
+        let dataQuery = wixData.query("ADCTEST");
+        if (desde) {
+            const fechaDesde = new Date(desde);
+            dataQuery = dataQuery.ge("_createdDate", fechaDesde);
+        }
+
+        const result = await dataQuery
+            .ascending("_createdDate")
+            .skip(skip)
+            .limit(limit)
+            .find();
+
+        const hasMore = (skip + result.items.length) < totalCount;
+
+        console.log(`✅ Exportados ${result.items.length} de ${totalCount} registros ADCTEST`);
+
+        return {
+            success: true,
+            items: result.items,
+            count: result.items.length,
+            totalCount: totalCount,
+            skip: skip,
+            hasMore: hasMore,
+            nextSkip: hasMore ? skip + result.items.length : null
+        };
+    } catch (error) {
+        console.error("❌ Error exportando ADCTEST:", error);
+        return {
+            success: false,
+            error: error.message,
+            items: [],
+            count: 0,
+            totalCount: 0
+        };
+    }
+}
