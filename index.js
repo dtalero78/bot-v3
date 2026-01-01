@@ -1265,7 +1265,8 @@ app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    persistence: 'WHP Database (Wix)'
+    persistence: 'PostgreSQL (100% - Sin Wix)',
+    version: '2.0 - Optimizado'
   });
 });
 
