@@ -1023,7 +1023,7 @@ IMPORTANTE: Usa el "Estado detallado" para saber exactamente en qué punto está
     if (aiResponse === 'VOLVER_AL_MENU') {
       // Limpiar historial y enviar menú
       await saveConversationToDB(from, [], false, message.from_name || '');
-      await sendWhatsAppMessage(from, '🩺 Nuestras opciones:\nVirtual – $46.000 COP\nPresencial – $69.000 COP');
+      await sendWhatsAppMessage(from, '🩺 Nuestras opciones:\nVirtual – $50.000 COP\nPresencial – $69.000 COP');
     } else if (aiResponse.includes('AGENDA_COMPLETADA')) {
       // Filtrar comando interno antes de enviar
       const mensajeUsuario = aiResponse.replace('AGENDA_COMPLETADA', '').trim();
@@ -1137,7 +1137,7 @@ app.post('/webhook-pagos', async (req, res) => {
 
 🩺 *Nuestras opciones:*
 
-*Virtual – $46.000 COP*
+*Virtual – $50.000 COP*
 • 100% online desde cualquier lugar
 • Disponible 7am-7pm todos los días
 • Duración: 35 minutos
