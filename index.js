@@ -1148,13 +1148,15 @@ IMPORTANTE: Usa el "Estado detallado" para saber exactamente en qué punto está
       // Limpiar historial y enviar menú
       await saveConversationToDB(from, [], false, message.from_name || '');
       await sendWhatsAppMessage(from, '🩺 Nuestras opciones:\nVirtual – $46.000 COP\nPresencial – $69.000 COP');
-    } else if (aiResponse === 'AGENDA_COMPLETADA') {
-      // Guardar conversación y enviar respuesta
-      await sendWhatsAppMessage(from, aiResponse);
+    } else if (aiResponse.includes('AGENDA_COMPLETADA')) {
+      // Filtrar comando interno antes de enviar
+      const mensajeUsuario = aiResponse.replace('AGENDA_COMPLETADA', '').trim();
+      await sendWhatsAppMessage(from, mensajeUsuario);
       await saveConversationToDB(from, conversationHistory, false, message.from_name || '');
     } else if (aiResponse.includes('...transfiriendo con asesor')) {
-      // Enviar mensaje, guardar conversación y marcar stopBot
-      await sendWhatsAppMessage(from, aiResponse);
+      // Filtrar marcador de transferencia antes de enviar
+      const mensajeUsuario = aiResponse.replace('...transfiriendo con asesor', '').trim();
+      await sendWhatsAppMessage(from, mensajeUsuario || 'Un momento por favor.');
       await saveConversationToDB(from, conversationHistory, false, message.from_name || '');
       await updateStopBotOnly(from, true);
       console.log(`🤖 Bot auto-detenido para ${from} (transferencia a asesor)`);
