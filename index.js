@@ -118,6 +118,61 @@ async function getOrCreateConversationPostgres(celular) {
 }
 
 /**
+ * Guardar un mensaje individual en la tabla mensajes_whatsapp
+ * @param {number} conversacionId - ID de la conversación
+ * @param {string} direccion - 'entrante' o 'saliente'
+ * @param {string} contenido - Contenido del mensaje
+ * @param {string} tipoMensaje - 'texto', 'imagen', etc.
+ * @returns {Promise<boolean>} - Éxito de la operación
+ */
+async function guardarMensaje(conversacionId, direccion, contenido, tipoMensaje = 'texto') {
+  try {
+    await pool.query(`
+      INSERT INTO mensajes_whatsapp (
+        conversacion_id, direccion, contenido, tipo_mensaje, timestamp, leido_por_agente
+      ) VALUES ($1, $2, $3, $4, NOW(), false)
+    `, [conversacionId, direccion, contenido, tipoMensaje]);
+
+    console.log(`💬 Mensaje guardado: ${direccion} (conversación ${conversacionId})`);
+    return true;
+  } catch (error) {
+    console.error('❌ Error guardando mensaje:', error.message);
+    return false;
+  }
+}
+
+/**
+ * Recuperar mensajes del historial de una conversación
+ * @param {number} conversacionId - ID de la conversación
+ * @param {number} limite - Número máximo de mensajes a recuperar
+ * @returns {Promise<Array>} - Array de mensajes
+ */
+async function recuperarMensajes(conversacionId, limite = 10) {
+  try {
+    const result = await pool.query(`
+      SELECT direccion, contenido, timestamp
+      FROM mensajes_whatsapp
+      WHERE conversacion_id = $1
+      ORDER BY timestamp DESC
+      LIMIT $2
+    `, [conversacionId, limite]);
+
+    // Invertir para que queden en orden cronológico (más antiguos primero)
+    const mensajes = result.rows.reverse().map(msg => ({
+      from: msg.direccion === 'entrante' ? 'usuario' : 'bot',
+      mensaje: msg.contenido,
+      timestamp: msg.timestamp
+    }));
+
+    console.log(`📖 Recuperados ${mensajes.length} mensajes de conversación ${conversacionId}`);
+    return mensajes;
+  } catch (error) {
+    console.error('❌ Error recuperando mensajes:', error.message);
+    return [];
+  }
+}
+
+/**
  * Actualizar stopBot en PostgreSQL
  * @param {string} celular - Número de celular
  * @param {boolean} stopBot - Nuevo valor de stopBot
@@ -240,9 +295,12 @@ async function getConversationFromDB(userId) {
   // Obtener/crear en PostgreSQL
   const pgConv = await getOrCreateConversationPostgres(userId);
 
+  // Recuperar últimos 10 mensajes del historial
+  const mensajes = await recuperarMensajes(pgConv.id, 10);
+
   return {
     stopBot: pgConv.stopBot || false,
-    mensajes: [], // Se construyen localmente en línea 1109
+    mensajes: mensajes, // Mensajes reales del historial
     observaciones: '',
     threadId: '',
     pgConvId: pgConv.id
@@ -279,7 +337,21 @@ async function saveConversationToDB(userId, mensajes, stopBot = false, nombre = 
     await updateStopBotPostgres(userId, stopBot);
   }
 
-  console.log(`💾 Conversación guardada: ${userId} (${mensajes.length} mensajes)`);
+  // Guardar mensajes individuales en mensajes_whatsapp
+  const pgConv = await getOrCreateConversationPostgres(userId);
+
+  // Guardar solo los últimos 2 mensajes (último intercambio usuario-bot)
+  if (mensajes.length >= 2) {
+    const ultimosMensajes = mensajes.slice(-2);
+
+    for (const msg of ultimosMensajes) {
+      const direccion = msg.role === 'user' ? 'entrante' : 'saliente';
+      const contenido = msg.content;
+      await guardarMensaje(pgConv.id, direccion, contenido, 'texto');
+    }
+  }
+
+  console.log(`💾 Conversación guardada: ${userId} (${mensajes.length} mensajes en memoria, últimos 2 persistidos)`);
 
   // RAG: Guardar último par pregunta-respuesta para aprendizaje (async, no bloquea)
   guardarEnRAGAsync(userId, mensajes);
