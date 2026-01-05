@@ -576,10 +576,10 @@ async function consultarCita(numeroDocumento) {
  */
 async function consultarEstadoPaciente(numeroDocumento) {
   try {
-    // 1. Buscar en HistoriaClinica (PostgreSQL)
+    // 1. Buscar en HistoriaClinica (PostgreSQL) - incluir codEmpresa
     const result = await pool.query(`
       SELECT "_id", "primerNombre", "segundoNombre", "primerApellido", "segundoApellido",
-             "celular", "empresa", "fechaAtencion", "fechaConsulta", "ciudad"
+             "celular", "empresa", "codEmpresa", "fechaAtencion", "fechaConsulta", "ciudad"
       FROM "HistoriaClinica"
       WHERE "numeroId" = $1
       ORDER BY "fechaAtencion" DESC
@@ -592,6 +592,18 @@ async function consultarEstadoPaciente(numeroDocumento) {
 
     const paciente = result.rows[0];
     console.log(`✅ Paciente encontrado para ${numeroDocumento}`);
+
+    // Verificar si es empresa especial que requiere stopBot automático
+    const requiereStopBot = esEmpresaEspecial(paciente.codEmpresa);
+
+    if (requiereStopBot) {
+      console.log(`🔒 Empresa especial detectada: ${paciente.codEmpresa} - Activando stopBot para ${paciente.celular}`);
+      // Activar stopBot automáticamente usando el celular del paciente
+      if (paciente.celular) {
+        const celularFormateado = paciente.celular.startsWith('57') ? paciente.celular : `57${paciente.celular}`;
+        await updateStopBotOnly(celularFormateado, true);
+      }
+    }
 
     const historiaId = paciente._id;
     const nombre = `${paciente.primerNombre || ''} ${paciente.primerApellido || ''}`.trim();
