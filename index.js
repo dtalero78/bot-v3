@@ -1180,6 +1180,13 @@ app.post('/webhook-pagos', async (req, res) => {
     // Obtener estado del flujo de pago (en memoria)
     const estadoPago = estadoPagos.get(from);
 
+    // ⚠️ IMPORTANTE: Si es mensaje de texto y NO hay flujo de pago activo, ignorar
+    // Este webhook SOLO procesa: imágenes (comprobantes) y documentos después de imagen
+    if (messageType === 'text' && !estadoPago) {
+      console.log(`📝 Mensaje de texto ignorado en webhook-pagos (sin flujo activo): ${from}`);
+      return res.status(200).json({ status: 'ok', message: 'Text message ignored - no payment flow active' });
+    }
+
     // FLUJO 1: Usuario envía imagen (comprobante de pago)
     if (messageType === 'image') {
       console.log(`📸 Imagen recibida de ${from}`);
