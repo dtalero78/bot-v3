@@ -416,9 +416,13 @@ async function clasificarImagen(base64Image, mimeType) {
 
 1. "comprobante_pago" - Si es un comprobante de pago, transferencia bancaria, recibo de pago, captura de Nequi, Daviplata, Bancolombia, etc.
 
-2. "otra_imagen" - Si es cualquier otra cosa que no sea un comprobante de pago.
+2. "listado_examenes" - Si es una solicitud de exámenes médicos de una empresa, EPS, o listado de exámenes requeridos.
 
-Responde solo con una de las dos opciones, sin explicación adicional.`
+3. "certificado_medico" - Si es un certificado médico YA EMITIDO, documento con resultados de exámenes, certificado de aptitud laboral, o cualquier documento médico oficial con firmas/sellos.
+
+4. "otra_imagen" - Si es cualquier otra cosa que no coincida con las categorías anteriores.
+
+Responde solo con una de las cuatro opciones, sin explicación adicional.`
             },
             {
               type: 'image_url',
@@ -436,6 +440,10 @@ Responde solo con una de las dos opciones, sin explicación adicional.`
 
     if (resultado.includes('comprobante_pago')) {
       return 'comprobante_pago';
+    } else if (resultado.includes('listado_examenes')) {
+      return 'listado_examenes';
+    } else if (resultado.includes('certificado_medico')) {
+      return 'certificado_medico';
     } else {
       return 'otra_imagen';
     }
@@ -1158,23 +1166,20 @@ app.post('/webhook-pagos', async (req, res) => {
       return res.status(200).json({ status: 'ok', message: 'Group message ignored' });
     }
 
-    // Detectar comando de admin "...dame un momento"
-    if (message.from_me && from === ADMIN_NUMBER && messageText.includes('...dame un momento')) {
-      // Extraer userId del chatId (formato: "573123456789@s.whatsapp.net")
-      const userId = chatId.split('@')[0];
-
-      // Cancelar flujo de pago en progreso (silenciosamente)
-      if (estadoPagos.has(userId)) {
-        estadoPagos.delete(userId);
-        console.log(`🔄 Admin canceló flujo de pago para ${userId}`);
+    // ⚠️ CRÍTICO: Ignorar TODOS los mensajes del bot/admin (texto E imágenes)
+    // Esto debe estar ANTES de procesar imágenes para evitar que el admin active flujos de pago
+    if (message.from_me) {
+      // Caso especial: comando de admin "...dame un momento" para cancelar flujo
+      if (from === ADMIN_NUMBER && messageText.includes('...dame un momento')) {
+        const userId = chatId.split('@')[0];
+        if (estadoPagos.has(userId)) {
+          estadoPagos.delete(userId);
+          console.log(`🔄 Admin canceló flujo de pago para ${userId}`);
+        }
       }
 
-      return res.status(200).json({ status: 'ok', message: 'Payment flow cancelled by admin' });
-    }
-
-    // Ignorar otros mensajes del bot
-    if (message.from_me) {
-      return res.status(200).json({ status: 'ok', message: 'Message from bot ignored' });
+      console.log(`🤖 Mensaje del bot/admin ignorado en webhook-pagos (from: ${from}, type: ${messageType})`);
+      return res.status(200).json({ status: 'ok', message: 'Message from bot/admin ignored' });
     }
 
     // Obtener estado del flujo de pago (en memoria)
