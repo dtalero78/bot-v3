@@ -414,13 +414,18 @@ async function clasificarImagen(base64Image, mimeType) {
               type: 'text',
               text: `Analiza esta imagen y clasifícala. Responde ÚNICAMENTE con una de estas opciones:
 
-1. "comprobante_pago" - Si es un comprobante de pago, transferencia bancaria, recibo de pago, captura de Nequi, Daviplata, Bancolombia, etc.
+1. "comprobante_pago" - Si es un comprobante de pago, transferencia bancaria, recibo de pago, captura de Nequi, Daviplata, Bancolombia, PSE, screenshot de transacción exitosa.
 
-2. "listado_examenes" - Si es una solicitud de exámenes médicos de una empresa, EPS, o listado de exámenes requeridos.
+2. "listado_examenes" - SOLO si es un DOCUMENTO FÍSICO O PDF de una empresa/EPS que lista exámenes requeridos para un cargo (como "Auxiliar de bodega requiere: audiometría, optometría, médico general"). NO clasificar como listado_examenes si es:
+   - Formulario web/página de agendamiento
+   - Screenshot de portal/plataforma
+   - Certificado médico ya emitido
 
-3. "certificado_medico" - Si es un certificado médico YA EMITIDO, documento con resultados de exámenes, certificado de aptitud laboral, o cualquier documento médico oficial con firmas/sellos.
+3. "certificado_medico" - Si es un certificado médico YA EMITIDO por BSL u otra entidad, con resultados de exámenes, firma de médico, sellos oficiales, o formato de certificado de aptitud laboral.
 
-4. "otra_imagen" - Si es cualquier otra cosa que no coincida con las categorías anteriores.
+4. "otra_imagen" - Si es cualquier otra cosa: screenshots de formularios web, páginas de agendamiento, capturas de pantalla de computador, fotos personales, documentos de identidad, etc.
+
+⚠️ IMPORTANTE: Si es un screenshot de una página web o formulario de agendamiento, clasifica como "otra_imagen", NO como "listado_examenes".
 
 Responde solo con una de las cuatro opciones, sin explicación adicional.`
             },
