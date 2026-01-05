@@ -49,6 +49,9 @@ const WHAPI_TOKEN = process.env.WHAPI_KEY;
 // Número del administrador
 const ADMIN_NUMBER = process.env.ADMIN_NUMBER;
 
+// Empresas que activan stopBot automático
+const EMPRESAS_STOPBOT_AUTO = (process.env.EMPRESAS_STOPBOT_AUTO || '').split(',').map(e => e.trim()).filter(e => e);
+
 // ID del grupo autorizado para consultas de cédula
 const GRUPO_CONSULTAS_ID = process.env.GRUPO_CONSULTAS_ID;
 
@@ -459,6 +462,15 @@ Responde solo con una de las cuatro opciones, sin explicación adicional.`
 }
 
 /**
+ * Verificar si codEmpresa requiere stopBot automático
+ */
+function esEmpresaEspecial(codEmpresa) {
+  if (!codEmpresa) return false;
+  const codEmpresaUpper = codEmpresa.toUpperCase().trim();
+  return EMPRESAS_STOPBOT_AUTO.some(empresa => codEmpresaUpper === empresa.toUpperCase());
+}
+
+/**
  * OPTIMIZADO: Buscar paciente por celular en PostgreSQL
  * Eliminada consulta a Wix - usa HistoriaClinica en PostgreSQL
  */
@@ -467,10 +479,10 @@ async function buscarPacientePorCelular(celular) {
     // Limpiar el número: quitar código de país 57 y caracteres no numéricos
     const celularLimpio = celular.replace(/\D/g, '').replace(/^57/, '');
 
-    // Buscar en PostgreSQL
+    // Buscar en PostgreSQL (incluir codEmpresa)
     const result = await pool.query(`
       SELECT "_id", "numeroId", "primerNombre", "primerApellido", "celular",
-             "fechaAtencion", "fechaConsulta", "empresa"
+             "fechaAtencion", "fechaConsulta", "empresa", "codEmpresa"
       FROM "HistoriaClinica"
       WHERE "celular" = $1
       ORDER BY "fechaAtencion" DESC
@@ -479,6 +491,16 @@ async function buscarPacientePorCelular(celular) {
 
     if (result.rows.length > 0) {
       const paciente = result.rows[0];
+
+      // Verificar si es empresa especial que requiere stopBot automático
+      const requiereStopBot = esEmpresaEspecial(paciente.codEmpresa);
+
+      if (requiereStopBot) {
+        console.log(`🔒 Empresa especial detectada: ${paciente.codEmpresa} - Activando stopBot para ${celularLimpio}`);
+        // Activar stopBot automáticamente
+        await updateStopBotOnly(celular, true);
+      }
+
       return {
         success: true,
         numeroId: paciente.numeroId,
@@ -487,6 +509,8 @@ async function buscarPacientePorCelular(celular) {
         fechaAtencion: paciente.fechaAtencion,
         fechaConsulta: paciente.fechaConsulta,
         empresa: paciente.empresa,
+        codEmpresa: paciente.codEmpresa,
+        requiereStopBot: requiereStopBot,
         _id: paciente._id
       };
     } else {
@@ -506,7 +530,7 @@ async function consultarCita(numeroDocumento) {
   try {
     const result = await pool.query(`
       SELECT "_id", "primerNombre", "segundoNombre", "primerApellido", "segundoApellido",
-             "celular", "empresa", "fechaAtencion", "fechaConsulta", "ciudad"
+             "celular", "empresa", "codEmpresa", "fechaAtencion", "fechaConsulta", "ciudad"
       FROM "HistoriaClinica"
       WHERE "numeroId" = $1
       ORDER BY "fechaAtencion" DESC
@@ -516,13 +540,25 @@ async function consultarCita(numeroDocumento) {
     if (result.rows.length > 0) {
       const paciente = result.rows[0];
       console.log(`✅ Cita encontrada para ${numeroDocumento}`);
+
+      // Verificar si es empresa especial que requiere stopBot automático
+      const requiereStopBot = esEmpresaEspecial(paciente.codEmpresa);
+
+      if (requiereStopBot && paciente.celular) {
+        console.log(`🔒 Empresa especial detectada: ${paciente.codEmpresa} - Activando stopBot para documento ${numeroDocumento}`);
+        // Activar stopBot automáticamente usando el celular del paciente
+        await updateStopBotOnly(`57${paciente.celular}`, true);
+      }
+
       return {
         success: true,
         paciente: {
           nombre: `${paciente.primerNombre || ''} ${paciente.primerApellido || ''}`.trim(),
           fechaAtencion: paciente.fechaAtencion,
           celular: paciente.celular,
-          empresa: paciente.empresa
+          empresa: paciente.empresa,
+          codEmpresa: paciente.codEmpresa,
+          requiereStopBot: requiereStopBot
         }
       };
     }
