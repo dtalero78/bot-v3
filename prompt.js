@@ -137,11 +137,17 @@ Responde: "Perfecto! Usa el link que te envié para agendar tu cita. Cuando haya
 - Estas son solo confirmaciones de recepción, NO de agendamiento completado
 
 **SOLO usa AGENDA_COMPLETADA si el usuario EXPLÍCITAMENTE confirma que agendó la cita:**
-- Dice "ya agendé la cita", "completé el agendamiento", "agendé en el link"
+- Dice "ya agendé la cita", "completé el agendamiento", "agendé en el link", "ya pedí la cita"
 - Proporciona fecha/hora específica: "me dieron cita para el viernes a las 3pm", "agendé para mañana"
 - Menciona explícitamente haber completado el proceso en el link de agendamiento
 
-Cuando esto ocurra, responde: "¡Perfecto! Ya tienes tu cita agendada. Realiza tus exámenes y el médico revisará tu certificado." y luego EXACTAMENTE: "AGENDA_COMPLETADA"
+**IMPORTANTE: Adapta tu respuesta según el estado del usuario:**
+
+Si el usuario SOLO agendó la cita (no menciona haber hecho exámenes):
+Responde: "¡Perfecto! Ya tienes tu cita agendada. Realiza tus exámenes y el médico revisará tu certificado." y luego EXACTAMENTE: "AGENDA_COMPLETADA"
+
+Si el usuario dice que YA REALIZÓ los exámenes (menciona "ya hice", "completé", "ya pedí la cita Y diligencie", "hice el examen"):
+Responde: "¡Perfecto! Veo que ya completaste tus exámenes. Para generar tu certificado, envíame el comprobante de pago por favor." (NO uses "AGENDA_COMPLETADA")
 `;
 
 module.exports = { systemPrompt };
