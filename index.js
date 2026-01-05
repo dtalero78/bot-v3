@@ -1240,7 +1240,20 @@ app.post('/webhook-pagos', async (req, res) => {
           return res.status(200).json({ status: 'ok', message: 'Listado de exámenes - información enviada' });
         }
 
-        // Caso 2: Otra imagen (no es pago ni exámenes)
+        // Caso 2: Certificado médico (ya emitido) - transferir a asesor
+        if (clasificacion === 'certificado_medico') {
+          console.log(`📄 Certificado médico detectado de ${from} - transfiriendo a asesor`);
+
+          const mensaje = `...transfiriendo con asesor`;
+          await sendWhatsAppMessage(from, mensaje);
+
+          // Marcar stopBot como true para transferir a humano
+          await updateStopBotOnly(from, true);
+
+          return res.status(200).json({ status: 'ok', message: 'Certificado médico detectado - transferido a asesor' });
+        }
+
+        // Caso 3: Otra imagen (no es pago ni exámenes ni certificado)
         if (clasificacion === 'otra_imagen' || clasificacion === 'error') {
           console.log(`❓ Imagen no reconocida de ${from} - transfiriendo a asesor`);
 
@@ -1253,7 +1266,7 @@ app.post('/webhook-pagos', async (req, res) => {
           return res.status(200).json({ status: 'ok', message: 'Imagen no reconocida - transferido a asesor' });
         }
 
-        // Caso 3: Comprobante de pago válido - pedir documento
+        // Caso 4: Comprobante de pago válido - pedir documento
         const mensaje = `¿Cual es tu número de documento? (solo números, sin puntos)`;
         await sendWhatsAppMessage(from, mensaje);
 
