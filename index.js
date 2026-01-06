@@ -12,6 +12,7 @@ const {
   ESTADOS_CONVERSACION,
   esEleccionVirtual,
   esEleccionPresencial,
+  esPalabraAmbigua,
   esCierreConversacion
 } = require('./estados');
 
@@ -1241,8 +1242,8 @@ Agenda aquí: https://bsl-plataforma.com/nuevaorden1.html`;
 
 Agenda aquí: https://bsl-plataforma.com/nuevaorden1.html`;
           nuevoEstado = ESTADOS_CONVERSACION.LINK_ENVIADO;
-        } else if (['ok', 'vale', 'bien', 'perfecto', 'aaaok', 'si'].includes(mensajeLower)) {
-          // Palabras genéricas → pedir clarificación
+        } else if (esPalabraAmbigua(messageText)) {
+          // Palabras ambiguas (ok, vale, listo, etc.) → pedir clarificación
           aiResponse = '¿Prefieres virtual o presencial?';
           // Mantener estado MOSTRANDO_OPCIONES
         } else {

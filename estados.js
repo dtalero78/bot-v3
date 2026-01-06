@@ -43,6 +43,24 @@ const PALABRAS_CIERRE = [
 ];
 
 /**
+ * Palabras ambiguas que NO indican una elección clara
+ * Cuando el usuario está en MOSTRANDO_OPCIONES, estas palabras requieren clarificación
+ */
+const PALABRAS_AMBIGUAS = [
+  'ok',
+  'vale',
+  'listo',
+  'si',
+  'sí',
+  'aaaa',
+  'ajá',
+  'aja',
+  'mmm',
+  'entendido',
+  'perfecto'
+];
+
+/**
  * Palabras que indican elección de examen virtual
  */
 const PALABRAS_VIRTUAL = [
@@ -83,6 +101,15 @@ function esEleccionPresencial(mensaje) {
 }
 
 /**
+ * Detecta si el mensaje es una palabra ambigua que requiere clarificación
+ * Cuando usuario está en MOSTRANDO_OPCIONES y dice "ok", "listo", etc.
+ */
+function esPalabraAmbigua(mensaje) {
+  const mensajeLower = mensaje.toLowerCase().trim();
+  return PALABRAS_AMBIGUAS.includes(mensajeLower);
+}
+
+/**
  * Detecta si el mensaje indica cierre de conversación
  * Solo aplica si el usuario acaba de recibir información completa
  */
@@ -99,9 +126,11 @@ function esCierreConversacion(mensaje, estadoActual) {
 module.exports = {
   ESTADOS_CONVERSACION,
   PALABRAS_CIERRE,
+  PALABRAS_AMBIGUAS,
   PALABRAS_VIRTUAL,
   PALABRAS_PRESENCIAL,
   esEleccionVirtual,
   esEleccionPresencial,
+  esPalabraAmbigua,
   esCierreConversacion
 };
