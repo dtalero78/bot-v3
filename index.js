@@ -539,6 +539,44 @@ function esEmpresaEspecial(codEmpresa) {
 }
 
 /**
+ * Verificar preventivamente si el celular pertenece a empresa especial
+ * y activar stopBot ANTES de que el bot responda
+ * @param {string} celular - Número de celular con código de país
+ * @returns {Promise<boolean>} - true si se activó stopBot (es empresa especial)
+ */
+async function verificarYActivarEmpresaEspecial(celular) {
+  try {
+    // Extraer número sin código de país
+    const celularLimpio = celular.replace(/^\+?57/, '');
+
+    // Buscar si existe paciente con ese celular
+    const result = await pool.query(`
+      SELECT "codEmpresa", "celular"
+      FROM "HistoriaClinica"
+      WHERE "celular" = $1
+      ORDER BY "fechaAtencion" DESC
+      LIMIT 1
+    `, [celularLimpio]);
+
+    if (result.rows.length > 0) {
+      const paciente = result.rows[0];
+      const esEspecial = esEmpresaEspecial(paciente.codEmpresa);
+
+      if (esEspecial) {
+        console.log(`🔒 PREVENTIVO: Empresa especial ${paciente.codEmpresa} detectada para ${celular} - Activando stopBot ANTES de responder`);
+        await updateStopBotOnly(celular, true);
+        return true;
+      }
+    }
+
+    return false;
+  } catch (error) {
+    console.error('❌ Error en verificarYActivarEmpresaEspecial:', error.message);
+    return false;
+  }
+}
+
+/**
  * OPTIMIZADO: Buscar paciente por celular en PostgreSQL
  * Eliminada consulta a Wix - usa HistoriaClinica en PostgreSQL
  */
@@ -1020,6 +1058,18 @@ Por favor envía el comprobante de pago cuando completes la transferencia.`;
     // Excepto para grupos autorizados donde las consultas de cédula siempre funcionan
     // OPTIMIZADO: Solo consulta PostgreSQL sin llamadas HTTP a Wix (~5-10ms vs ~200-500ms)
     if (!isAuthorizedGroup) {
+      // PASO 1: Verificar PREVENTIVAMENTE si es empresa especial (antes de que responda)
+      const esEmpresaEspecial = await verificarYActivarEmpresaEspecial(from);
+
+      if (esEmpresaEspecial) {
+        console.log(`⛔ Empresa especial detectada - Bot detenido PREVENTIVAMENTE para ${from}`);
+        return res.status(200).json({
+          status: 'ok',
+          message: 'Bot stopped - special company detected'
+        });
+      }
+
+      // PASO 2: Verificar si ya tiene stopBot activado en la base de datos
       const isStopBot = await checkStopBot(from);
 
       if (isStopBot) {
