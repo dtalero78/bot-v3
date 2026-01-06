@@ -7,6 +7,14 @@ const { Pool } = require('pg');
 // Importar el prompt del sistema
 const { systemPrompt } = require('./prompt');
 
+// Importar estados de conversación
+const {
+  ESTADOS_CONVERSACION,
+  esEleccionVirtual,
+  esEleccionPresencial,
+  esCierreConversacion
+} = require('./estados');
+
 // ========================================
 // CONFIGURACIÓN POSTGRESQL (DigitalOcean)
 // ========================================
@@ -172,6 +180,65 @@ async function recuperarMensajes(conversacionId, limite = 10) {
   } catch (error) {
     console.error('❌ Error recuperando mensajes:', error.message);
     return [];
+  }
+}
+
+// ========================================
+// FUNCIONES DE MANEJO DE ESTADOS
+// ========================================
+
+/**
+ * Obtener estado actual de la conversación
+ * @param {string} celular - Número de celular
+ * @returns {Promise<string>} - Estado actual
+ */
+async function getEstadoConversacion(celular) {
+  try {
+    const result = await pool.query(`
+      SELECT estado_actual
+      FROM conversaciones_whatsapp
+      WHERE celular = $1 AND estado != 'cerrada'
+      ORDER BY fecha_ultima_actividad DESC
+      LIMIT 1
+    `, [celular]);
+
+    if (result.rows.length > 0) {
+      return result.rows[0].estado_actual || ESTADOS_CONVERSACION.INICIO;
+    }
+
+    return ESTADOS_CONVERSACION.INICIO;
+  } catch (error) {
+    console.error('❌ Error obteniendo estado:', error.message);
+    return ESTADOS_CONVERSACION.INICIO;
+  }
+}
+
+/**
+ * Actualizar estado de la conversación
+ * @param {string} celular - Número de celular
+ * @param {string} nuevoEstado - Nuevo estado
+ * @returns {Promise<boolean>} - Éxito de la operación
+ */
+async function setEstadoConversacion(celular, nuevoEstado) {
+  try {
+    const result = await pool.query(`
+      UPDATE conversaciones_whatsapp
+      SET estado_actual = $1,
+          fecha_ultima_actividad = NOW()
+      WHERE celular = $2 AND estado != 'cerrada'
+      RETURNING id
+    `, [nuevoEstado, celular]);
+
+    if (result.rowCount > 0) {
+      console.log(`🔄 Estado actualizado para ${celular}: ${nuevoEstado}`);
+      return true;
+    }
+
+    console.log(`⚠️ No se pudo actualizar estado para ${celular}`);
+    return false;
+  } catch (error) {
+    console.error('❌ Error actualizando estado:', error.message);
+    return false;
   }
 }
 
@@ -1132,19 +1199,150 @@ IMPORTANTE: Usa el "Estado detallado" para saber exactamente en qué punto está
       console.log(`🔍 No se encontró paciente registrado con celular: ${from}`);
     }
 
-    // Convertir mensajes de WHP a formato OpenAI
-    let conversationHistory = conversationData.mensajes.map(msg => ({
-      role: msg.from === 'usuario' ? 'user' : 'assistant',
-      content: msg.mensaje
-    }));
+    // ========================================
+    // 🎯 LÓGICA DE ESTADOS EXPLÍCITA
+    // ========================================
+    // Obtener estado actual de la conversación
+    const estadoActual = await getEstadoConversacion(from);
+    console.log(`🔄 Estado actual de ${from}: ${estadoActual}`);
 
-    // Mantener solo los últimos 10 mensajes (5 intercambios) para el contexto
-    if (conversationHistory.length > 10) {
-      conversationHistory = conversationHistory.slice(-10);
+    // Variables para respuesta del bot
+    let aiResponse = null;
+    let nuevoEstado = null;
+
+    // SWITCH: Manejo explícito de estados basado en la máquina de estados
+    switch (estadoActual) {
+      case ESTADOS_CONVERSACION.INICIO:
+        // Usuario está empezando conversación o volvió al inicio
+        // Dejar que OpenAI maneje el saludo y muestre opciones
+        nuevoEstado = ESTADOS_CONVERSACION.CONVERSACION_ACTIVA;
+        break;
+
+      case ESTADOS_CONVERSACION.MOSTRANDO_OPCIONES:
+        // Bot mostró opciones virtual/presencial, esperando elección
+        const mensajeLower = messageText.toLowerCase().trim();
+
+        if (esEleccionVirtual(messageText)) {
+          // Usuario eligió VIRTUAL explícitamente
+          aiResponse = `Excelente elección! 💻 Examen Virtual ($52.000)
+📍 100% online desde cualquier lugar
+⏰ Disponible 7am-7pm todos los días
+⏱️ Duración: 35 minutos total
+🔬 Incluye: Médico, audiometría, optometría
+
+Agenda aquí: https://bsl-plataforma.com/nuevaorden1.html`;
+          nuevoEstado = ESTADOS_CONVERSACION.LINK_ENVIADO;
+        } else if (esEleccionPresencial(messageText)) {
+          // Usuario eligió PRESENCIAL explícitamente
+          aiResponse = `Perfecto! 🏥 Examen Presencial ($69.000)
+📍 Calle 134 No. 7-83, Bogotá
+⏰ Lunes a Viernes 7:30am-4:30pm, Sábados 8am-11:30am
+📋 Incluye: Médico, audiometría, optometría
+
+Agenda aquí: https://bsl-plataforma.com/nuevaorden1.html`;
+          nuevoEstado = ESTADOS_CONVERSACION.LINK_ENVIADO;
+        } else if (['ok', 'vale', 'bien', 'perfecto', 'aaaok', 'si'].includes(mensajeLower)) {
+          // Palabras genéricas → pedir clarificación
+          aiResponse = '¿Prefieres virtual o presencial?';
+          // Mantener estado MOSTRANDO_OPCIONES
+        } else {
+          // Otra cosa → dejar que OpenAI maneje (puede ser pregunta sobre opciones)
+          nuevoEstado = ESTADOS_CONVERSACION.CONVERSACION_ACTIVA;
+        }
+        break;
+
+      case ESTADOS_CONVERSACION.LINK_ENVIADO:
+        // Bot envió link de agendamiento, esperando confirmación
+        const mensajeLinkLower = messageText.toLowerCase().trim();
+
+        // Detectar confirmación EXPLÍCITA de agendamiento completado
+        const confirmacionesAgendamiento = [
+          'ya agendé',
+          'agendé la cita',
+          'completé el agendamiento',
+          'ya pedí la cita',
+          'agendé en el link',
+          'ya tengo cita'
+        ];
+
+        const mencionaFechaHora = /\d{1,2}.*(?:am|pm|mañana|tarde|viernes|lunes|martes|miércoles|jueves|sábado|domingo)/i.test(messageText);
+
+        if (confirmacionesAgendamiento.some(conf => mensajeLinkLower.includes(conf)) || mencionaFechaHora) {
+          // Usuario confirma que agendó la cita
+          aiResponse = '¡Perfecto! Ya tienes tu cita agendada. Realiza tus exámenes y el médico revisará tu certificado.';
+          nuevoEstado = ESTADOS_CONVERSACION.CONVERSACION_ACTIVA;
+        } else if (['ok', 'vale', 'bien', 'perfecto', 'si', 'listo'].includes(mensajeLinkLower)) {
+          // Usuario solo confirma recepción del link (NO agendamiento)
+          aiResponse = 'Perfecto! Usa el link que te envié para agendar tu cita. Cuando hayas completado el agendamiento, avísame.';
+          // Mantener estado LINK_ENVIADO
+        } else {
+          // Otra cosa → puede ser pregunta, dejar que OpenAI maneje
+          nuevoEstado = ESTADOS_CONVERSACION.CONVERSACION_ACTIVA;
+        }
+        break;
+
+      case ESTADOS_CONVERSACION.CONVERSACION_ACTIVA:
+        // Conversación fluida, detectar si el bot mostró opciones virtual/presencial
+        // Esto debe ser manejado por OpenAI, pero detectamos si responde con opciones
+        // (lo haremos después de la respuesta de OpenAI)
+        break;
+
+      case ESTADOS_CONVERSACION.CONSULTANDO_CITA:
+        // Bot acabó de mostrar info de cita, detectar cierre
+        if (esCierreConversacion(messageText, estadoActual)) {
+          aiResponse = '¡Con gusto! Si necesitas algo más, aquí estaré. 👍';
+          nuevoEstado = ESTADOS_CONVERSACION.CERRANDO_CONVERSACION;
+        } else {
+          // Otra consulta → volver a conversación activa
+          nuevoEstado = ESTADOS_CONVERSACION.CONVERSACION_ACTIVA;
+        }
+        break;
+
+      case ESTADOS_CONVERSACION.CERRANDO_CONVERSACION:
+        // Usuario ya cerró conversación pero volvió a escribir → reiniciar
+        nuevoEstado = ESTADOS_CONVERSACION.INICIO;
+        break;
+
+      default:
+        // Estado desconocido → resetear a conversación activa
+        nuevoEstado = ESTADOS_CONVERSACION.CONVERSACION_ACTIVA;
     }
 
-    // Obtener respuesta de AI (con contexto del paciente si está disponible)
-    const aiResponse = await getAIResponse(messageText, conversationHistory, contextoPaciente);
+    // Si ya tenemos respuesta del switch, no llamar a OpenAI
+    let conversationHistory;
+    if (!aiResponse) {
+      // Convertir mensajes de WHP a formato OpenAI
+      conversationHistory = conversationData.mensajes.map(msg => ({
+        role: msg.from === 'usuario' ? 'user' : 'assistant',
+        content: msg.mensaje
+      }));
+
+      // Mantener solo los últimos 10 mensajes (5 intercambios) para el contexto
+      if (conversationHistory.length > 10) {
+        conversationHistory = conversationHistory.slice(-10);
+      }
+
+      // Obtener respuesta de AI (con contexto del paciente si está disponible)
+      aiResponse = await getAIResponse(messageText, conversationHistory, contextoPaciente);
+
+      // ========================================
+      // 🔍 DETECTAR CAMBIOS DE ESTADO BASADOS EN RESPUESTA DE OPENAI
+      // ========================================
+      // Si OpenAI muestra el menú de opciones → cambiar a MOSTRANDO_OPCIONES
+      if (aiResponse.includes('Virtual – $52.000') && aiResponse.includes('Presencial – $69.000')) {
+        nuevoEstado = ESTADOS_CONVERSACION.MOSTRANDO_OPCIONES;
+        console.log(`🎯 OpenAI mostró opciones → cambio a MOSTRANDO_OPCIONES`);
+      }
+    } else {
+      // Si la respuesta viene del switch, crear historial vacío para concatenar
+      conversationHistory = conversationData.mensajes.map(msg => ({
+        role: msg.from === 'usuario' ? 'user' : 'assistant',
+        content: msg.mensaje
+      }));
+      if (conversationHistory.length > 10) {
+        conversationHistory = conversationHistory.slice(-10);
+      }
+    }
 
     // Actualizar historial con el nuevo intercambio
     conversationHistory.push(
@@ -1152,16 +1350,25 @@ IMPORTANTE: Usa el "Estado detallado" para saber exactamente en qué punto está
       { role: 'assistant', content: aiResponse }
     );
 
+    // ========================================
+    // 💾 ACTUALIZAR ESTADO EN BASE DE DATOS
+    // ========================================
+    if (nuevoEstado) {
+      await setEstadoConversacion(from, nuevoEstado);
+    }
+
     // Verificar comandos especiales
     if (aiResponse === 'VOLVER_AL_MENU') {
       // Limpiar historial y enviar menú
       await saveConversationToDB(from, [], false, message.from_name || '');
       await sendWhatsAppMessage(from, '🩺 Nuestras opciones:\nVirtual – $52.000 COP\nPresencial – $69.000 COP');
+      await setEstadoConversacion(from, ESTADOS_CONVERSACION.MOSTRANDO_OPCIONES);
     } else if (aiResponse.includes('AGENDA_COMPLETADA')) {
       // Filtrar comando interno antes de enviar
       const mensajeUsuario = aiResponse.replace('AGENDA_COMPLETADA', '').trim();
       await sendWhatsAppMessage(from, mensajeUsuario);
       await saveConversationToDB(from, conversationHistory, false, message.from_name || '');
+      await setEstadoConversacion(from, ESTADOS_CONVERSACION.CONVERSACION_ACTIVA);
     } else if (aiResponse.includes('...transfiriendo con asesor')) {
       // Filtrar marcador de transferencia antes de enviar
       const mensajeUsuario = aiResponse.replace('...transfiriendo con asesor', '').trim();
