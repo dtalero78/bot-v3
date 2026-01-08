@@ -1511,18 +1511,44 @@ app.post('/webhook-pagos', async (req, res) => {
       console.log(`📸 Imagen recibida de ${from}`);
 
       try {
-        // 1. Descargar imagen
+        // 1. Descargar imagen con retry
         const imageId = message.image?.id;
         const mimeType = message.image?.mime_type || 'image/jpeg';
         const urlImg = `https://gate.whapi.cloud/media/${imageId}`;
 
-        const imageResponse = await axios.get(urlImg, {
-          headers: { 'Authorization': `Bearer ${WHAPI_TOKEN}` },
-          responseType: 'arraybuffer',
-          timeout: 30000, // 30 segundos timeout
-          maxContentLength: 50 * 1024 * 1024, // 50MB max
-          maxBodyLength: 50 * 1024 * 1024 // 50MB max
-        });
+        let imageResponse;
+        let retries = 3;
+        let lastError;
+
+        for (let attempt = 1; attempt <= retries; attempt++) {
+          try {
+            console.log(`📥 Intento ${attempt}/${retries} descargando imagen: ${imageId}`);
+
+            imageResponse = await axios.get(urlImg, {
+              headers: { 'Authorization': `Bearer ${WHAPI_TOKEN}` },
+              responseType: 'arraybuffer',
+              timeout: 60000, // 60 segundos timeout (aumentado de 30)
+              maxContentLength: 100 * 1024 * 1024, // 100MB max (aumentado de 50)
+              maxBodyLength: 100 * 1024 * 1024 // 100MB max
+            });
+
+            console.log(`✅ Imagen descargada exitosamente en intento ${attempt}`);
+            break; // Éxito, salir del loop
+          } catch (error) {
+            lastError = error;
+            console.log(`❌ Error en intento ${attempt}/${retries}: ${error.message}`);
+
+            if (attempt < retries) {
+              const waitTime = attempt * 2000; // 2s, 4s, 6s
+              console.log(`⏳ Esperando ${waitTime}ms antes del siguiente intento...`);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+          }
+        }
+
+        if (!imageResponse) {
+          throw new Error(`Failed to download image after ${retries} attempts: ${lastError?.message}`);
+        }
 
         const base64Image = Buffer.from(imageResponse.data).toString('base64');
 
