@@ -1518,7 +1518,10 @@ app.post('/webhook-pagos', async (req, res) => {
 
         const imageResponse = await axios.get(urlImg, {
           headers: { 'Authorization': `Bearer ${WHAPI_TOKEN}` },
-          responseType: 'arraybuffer'
+          responseType: 'arraybuffer',
+          timeout: 30000, // 30 segundos timeout
+          maxContentLength: 50 * 1024 * 1024, // 50MB max
+          maxBodyLength: 50 * 1024 * 1024 // 50MB max
         });
 
         const base64Image = Buffer.from(imageResponse.data).toString('base64');
