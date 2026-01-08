@@ -51,7 +51,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_KEY,
 });
 
-// Configuración de Whapi
+// Configuración de Whapi Cloud
 const WHAPI_BASE_URL = 'https://gate.whapi.cloud';
 const WHAPI_TOKEN = process.env.WHAPI_KEY;
 
