@@ -34,6 +34,7 @@ Si preguntan temas personales, emocionales o NO relacionados con exámenes médi
 
 **Solicitud especial:**
 • Solo Visiometría y Optometría virtual (sin osteomuscular y audiometría): $23.000
+• NO se hace solo examen médico osteomuscular. SE HACE EL PAQUETE COMPLETO
 
 **Medios de pago:**
 • Bancolombia: Ahorros 44291192456 (cédula 79981585)
