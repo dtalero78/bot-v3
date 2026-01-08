@@ -4,6 +4,9 @@ const axios = require('axios');
 const OpenAI = require('openai');
 const { Pool } = require('pg');
 
+// Build version: 2026-01-08-v2
+console.log('🚀 BSL WhatsApp Bot iniciando - Version: 2026-01-08-v2');
+
 // Importar el prompt del sistema
 const { systemPrompt } = require('./prompt');
 
