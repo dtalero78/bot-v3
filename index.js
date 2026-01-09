@@ -1704,7 +1704,7 @@ app.get('/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     persistence: 'PostgreSQL (100% - Sin Wix)',
-    version: '2.0 - Optimizado'
+    version: '2026-01-09-v1 - Fix admin detection'
   });
 });
 
