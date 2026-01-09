@@ -980,7 +980,8 @@ app.post('/webhook', async (req, res) => {
       console.log(`🔍 Debug: messageText="${messageText}"`);
 
       // Verificar si el admin quiere detener o reactivar el bot
-      if (messageText === '...transfiriendo con asesor') {
+      // Detectar AMBAS versiones: "..." (3 puntos ASCII) y "…" (ellipsis Unicode)
+      if (messageText === '...transfiriendo con asesor' || messageText === '…transfiriendo con asesor') {
         console.log(`🎯 Comando detectado: detener bot para ${userId}`);
         await updateStopBotOnly(userId, true);
         console.log(`🛑 Bot detenido para ${userId} por el administrador`);
@@ -988,7 +989,7 @@ app.post('/webhook', async (req, res) => {
         console.log(`🎯 Comando detectado: detener bot (certificado) para ${userId}`);
         await updateStopBotOnly(userId, true);
         console.log(`🛑 Bot detenido para ${userId} - certificado en proceso`);
-      } else if (messageText === '...te dejo con el bot 🤖') {
+      } else if (messageText === '...te dejo con el bot 🤖' || messageText === '…te dejo con el bot 🤖') {
         console.log(`🎯 Comando detectado: reactivar bot para ${userId}`);
         await updateStopBotOnly(userId, false);
         console.log(`✅ Bot reactivado para ${userId} por el administrador`);
