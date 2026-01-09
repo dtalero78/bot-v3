@@ -4,8 +4,8 @@ const axios = require('axios');
 const OpenAI = require('openai');
 const { Pool } = require('pg');
 
-// Build version: 2026-01-08-v2
-console.log('🚀 BSL WhatsApp Bot iniciando - Version: 2026-01-08-v2');
+// Build version: 2026-01-09-v1 - Fix: Detección correcta de mensajes del admin
+console.log('🚀 BSL WhatsApp Bot iniciando - Version: 2026-01-09-v1 - Fix admin detection');
 
 // Importar el prompt del sistema
 const { systemPrompt } = require('./prompt');
@@ -966,18 +966,15 @@ app.post('/webhook', async (req, res) => {
     console.log(`🔍 Debug: from="${from}", ADMIN_NUMBER="${ADMIN_NUMBER}", from_me=${message.from_me}`);
     console.log(`🔍 Debug: chatId="${chatId}"`);
 
-    // 👨‍💼 VERIFICAR SI EL MENSAJE ES DEL ADMIN (solo en chats individuales, no en grupos)
-    if (from === ADMIN_NUMBER && message.from_me && !isGroupMessage) {
+    // 👨‍💼 VERIFICAR SI EL MENSAJE ES DEL ADMIN
+    // Cuando el admin escribe en un chat con un usuario, from_me=true y from=número_del_usuario
+    if (message.from_me && !isGroupMessage) {
       console.log('📨 Mensaje del administrador detectado (chat individual)');
+      console.log(`🔍 Debug: Admin escribiendo en chat con ${from}`);
 
-      // Extraer el userId del chat_id (remover @s.whatsapp.net)
-      const userId = chatId ? chatId.split('@')[0].trim() : null;
-      console.log(`🔍 Debug: userId extraído="${userId}"`);
-
-      if (!userId) {
-        console.log('❌ No se pudo extraer userId del chatId');
-        return res.status(200).json({ status: 'ok', message: 'No chatId found' });
-      }
+      // El userId es el "from" (el usuario al que le está escribiendo el admin)
+      const userId = from;
+      console.log(`🔍 Debug: userId="${userId}"`);
 
       console.log(`🔍 Debug: messageText="${messageText}"`);
 
