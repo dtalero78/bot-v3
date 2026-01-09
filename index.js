@@ -5,6 +5,7 @@ const OpenAI = require('openai');
 const { Pool } = require('pg');
 
 // Build version: 2026-01-09-v1 - Fix: Detección correcta de mensajes del admin
+// Deploy timestamp: 2026-01-09 15:58 UTC
 console.log('🚀 BSL WhatsApp Bot iniciando - Version: 2026-01-09-v1 - Fix admin detection');
 
 // Importar el prompt del sistema
