@@ -221,10 +221,8 @@ app.post('/webhook', async (req, res) => {
       return res.status(200).json({ status: 'ok', message: 'Not from authorized group' });
     }
 
-    // Ignorar mensajes del bot
-    if (message.from_me) {
-      return res.status(200).json({ status: 'ok', message: 'Message from bot ignored' });
-    }
+    // No ignorar from_me porque el admin envía desde el mismo número conectado a Whapi
+    // No hay riesgo de loop: el bot responde con texto+emojis, nunca con solo dígitos (cédula)
 
     console.log(`📱 Mensaje del grupo autorizado de ${from}: ${messageText}`);
 
