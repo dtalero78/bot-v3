@@ -193,11 +193,14 @@ async function consultarEstadoPaciente(numeroDocumento) {
 // ========================================
 app.post('/webhook', async (req, res) => {
   try {
-    console.log('Webhook recibido:', JSON.stringify(req.body, null, 2));
+    const timestamp = new Date().toISOString();
+    console.log(`\n📩 ====== WEBHOOK RECIBIDO ${timestamp} ======`);
+    console.log('📩 Body completo:', JSON.stringify(req.body, null, 2));
 
     const message = req.body.messages?.[0];
 
     if (!message) {
+      console.log('⛔ Sin mensaje en el body');
       return res.status(200).json({ status: 'ok', message: 'No message found' });
     }
 
@@ -206,48 +209,66 @@ app.post('/webhook', async (req, res) => {
     const messageType = message.type;
     const messageText = message.text?.body || message.body || '';
     const chatId = message.chat_id;
+    const fromMe = message.from_me;
+
+    console.log(`📩 from: ${from}`);
+    console.log(`📩 from_me: ${fromMe}`);
+    console.log(`📩 type: ${messageType}`);
+    console.log(`📩 chat_id: ${chatId}`);
+    console.log(`📩 text: ${messageText}`);
 
     // Solo procesar mensajes de texto
     if (messageType !== 'text' || !messageText) {
+      console.log(`⛔ No es texto. type=${messageType}, text="${messageText}"`);
       return res.status(200).json({ status: 'ok', message: 'Not a text message' });
     }
 
     // Detectar si el mensaje viene de un grupo de WhatsApp
     const isGroupMessage = chatId && chatId.includes('@g.us');
+    console.log(`📩 isGroupMessage: ${isGroupMessage}`);
+    console.log(`📩 GRUPO_CONSULTAS_ID: ${GRUPO_CONSULTAS_ID}`);
+    console.log(`📩 chatId === GRUPO_CONSULTAS_ID: ${chatId === GRUPO_CONSULTAS_ID}`);
 
     // Solo procesar mensajes del grupo autorizado
     if (!isGroupMessage || chatId !== GRUPO_CONSULTAS_ID) {
-      console.log(`📱 Mensaje ignorado. No es del grupo autorizado.`);
+      console.log(`⛔ Mensaje ignorado. No es del grupo autorizado. chatId=${chatId}`);
       return res.status(200).json({ status: 'ok', message: 'Not from authorized group' });
     }
 
     // No ignorar from_me porque el admin envía desde el mismo número conectado a Whapi
     // No hay riesgo de loop: el bot responde con texto+emojis, nunca con solo dígitos (cédula)
 
-    console.log(`📱 Mensaje del grupo autorizado de ${from}: ${messageText}`);
+    console.log(`✅ Mensaje del grupo autorizado de ${from}: "${messageText}"`);
 
     // Verificar si el mensaje es una cédula
-    if (esCedula(messageText)) {
-      console.log(`🆔 Detectada cédula en grupo: ${messageText}`);
+    const cedula = esCedula(messageText);
+    console.log(`📩 esCedula("${messageText}"): ${cedula}`);
+
+    if (cedula) {
+      console.log(`🆔 Consultando cédula: ${messageText}`);
 
       const estadoPaciente = await consultarEstadoPaciente(messageText);
+      console.log(`🔍 Resultado consulta:`, JSON.stringify(estadoPaciente));
 
       if (estadoPaciente.success) {
         const respuesta = `${estadoPaciente.nombre} - ${estadoPaciente.ciudad}\n${estadoPaciente.estado}`;
+        console.log(`📤 Enviando respuesta al grupo: "${respuesta}"`);
         await sendWhatsAppMessage(chatId, respuesta);
+        console.log(`✅ Respuesta enviada exitosamente`);
         return res.status(200).json({ status: 'ok', message: 'Patient status sent to group' });
       } else {
+        console.log(`❌ Paciente no encontrado para ${messageText}`);
         await sendWhatsAppMessage(chatId, `❌ No encontré información con el documento ${messageText}`);
         return res.status(200).json({ status: 'ok', message: 'Patient not found' });
       }
     }
 
     // Ignorar otros mensajes que no sean cédulas
-    console.log(`📱 Mensaje ignorado (no es cédula): ${messageText}`);
+    console.log(`⛔ Mensaje ignorado (no es cédula): "${messageText}"`);
     return res.status(200).json({ status: 'ok', message: 'Message ignored - not a cedula' });
 
   } catch (error) {
-    console.error('Error procesando webhook:', error);
+    console.error('❌ ERROR en webhook:', error);
     res.status(500).json({ status: 'error', message: error.message });
   }
 });
